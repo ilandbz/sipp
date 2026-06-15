@@ -6,9 +6,13 @@ import streamlit as st
 load_dotenv()
 BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
+def _get_headers():
+    token = st.session_state.get("token", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
 def _get(ruta: str, params: dict = None):
     try:
-        r = requests.get(f"{BASE_URL}{ruta}", params=params, timeout=10)
+        r = requests.get(f"{BASE_URL}{ruta}", params=params, headers=_get_headers(), timeout=10)
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -16,10 +20,11 @@ def _get(ruta: str, params: dict = None):
 
 def _post(ruta: str, payload: dict = None, files=None, timeout=15):
     try:
+        headers = _get_headers()
         if files:
-            r = requests.post(f"{BASE_URL}{ruta}", files=files, timeout=timeout)
+            r = requests.post(f"{BASE_URL}{ruta}", files=files, headers=headers, timeout=timeout)
         else:
-            r = requests.post(f"{BASE_URL}{ruta}", json=payload, timeout=timeout)
+            r = requests.post(f"{BASE_URL}{ruta}", json=payload, headers=headers, timeout=timeout)
         r.raise_for_status()
         # Limpiar caché si la petición modifica datos
         st.cache_data.clear()
@@ -29,7 +34,7 @@ def _post(ruta: str, payload: dict = None, files=None, timeout=15):
 
 def _patch(ruta: str, payload: dict):
     try:
-        r = requests.patch(f"{BASE_URL}{ruta}", json=payload, timeout=15)
+        r = requests.patch(f"{BASE_URL}{ruta}", json=payload, headers=_get_headers(), timeout=15)
         r.raise_for_status()
         st.cache_data.clear()
         return r.json()
@@ -38,7 +43,7 @@ def _patch(ruta: str, payload: dict):
 
 def _delete(ruta: str):
     try:
-        r = requests.delete(f"{BASE_URL}{ruta}", timeout=15)
+        r = requests.delete(f"{BASE_URL}{ruta}", headers=_get_headers(), timeout=15)
         r.raise_for_status()
         st.cache_data.clear()
         return True
@@ -47,7 +52,7 @@ def _delete(ruta: str):
 
 def _put(ruta: str, payload: dict):
     try:
-        r = requests.put(f"{BASE_URL}{ruta}", json=payload, timeout=15)
+        r = requests.put(f"{BASE_URL}{ruta}", json=payload, headers=_get_headers(), timeout=15)
         r.raise_for_status()
         st.cache_data.clear()
         return r.json()

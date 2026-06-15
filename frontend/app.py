@@ -5,13 +5,46 @@ from utils.api_client import (
     get_kpi_semanal, get_cola_maquina, get_maquinas,
     ejecutar_optimizador, get_semanas, get_icc_matrix
 )
-
+from auth import login, logout, is_logged_in, get_rol, can, render_sidebar
+from pathlib import Path
 
 st.set_page_config(
     page_title="SIPP — VYGPACK",
     page_icon="🏭",
     layout="wide",
 )
+
+# Si no está logueado → mostrar login
+if not is_logged_in():
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        st.markdown("---")
+        # Logo si existe
+        logo = Path(__file__).parent / "static" / "logo_vygpack.png"
+        if logo.exists():
+            st.image(str(logo), width=200)
+        else:
+            st.markdown("# 🏭 SIPP")
+        
+        st.markdown("### Sistema de Programación de Producción")
+        st.markdown("**VYGPACK**")
+        st.markdown("---")
+        
+        with st.form("login_form"):
+            usuario = st.text_input("👤 Usuario")
+            clave   = st.text_input("🔒 Contraseña", type="password")
+            entrar  = st.form_submit_button("Iniciar Sesión",
+                        type="primary", use_container_width=True)
+        
+        if entrar:
+            if login(usuario, clave):
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos")
+        
+        st.markdown("---")
+        st.caption("© 2026 VYGPACK — Acceso restringido al personal autorizado")
+    st.stop()
 
 def opciones_semanas():
     today = datetime.date.today()
@@ -48,39 +81,7 @@ def render_matriz_icc(semana: str):
     st.dataframe(styled, width='stretch')
 
 # ── Sidebar ──────────────────────────────────────────────
-from pathlib import Path
-with st.sidebar:
-    logo_path = Path(__file__).parent / "static" / "logo_vygpack.png"
-    if logo_path.exists():
-        st.image(str(logo_path), width=150)
-        st.title("SIPP - VYGPACK")
-    else:
-        st.title("🏭 SIPP - VYGPACK")
-    semana_sel = st.selectbox("Semana", opciones_semanas())
-    st.divider()
-    st.markdown("### 📌 Flujo de trabajo")
-    st.page_link("pages/ordenes.py",  label="1️⃣ Órdenes de Fabricación")
-    st.page_link("pages/semanas.py",  label="2️⃣ Semanas de Programación")
-    st.page_link("app.py",            label="3️⃣ Dashboard / Optimizador")
-    st.page_link("pages/reportes.py", label="4️⃣ Reportes y Plan Semanal")
-    
-    st.divider()
-    st.markdown("### ⚙️ Configuración")
-    st.page_link("pages/clientes.py",  label="👥 Clientes")
-    st.page_link("pages/maestros.py",  label="🗂️ Maestros")
-    # para evitar errores de navegación de Streamlit
-    try:
-        st.page_link("pages/importar.py", label="📥 Importar CSV")
-    except Exception:
-        pass
-    try:
-        st.page_link("pages/setups.py", label="⏱ Registrar Setup")
-    except Exception:
-        pass
-    try:
-        st.page_link("pages/maestros.py", label="🗂 Maestros")
-    except Exception:
-        pass
+semana_sel = render_sidebar(opciones_semanas())
 
 # Verificar disponibilidad del backend (usando el endpoint de maquinas que ya funciona)
 maquinas = get_maquinas()
@@ -171,47 +172,50 @@ with col_icc:
     render_matriz_icc(semana_sel)
     
     st.divider()
-    if st.button("▶ Ejecutar Optimizador", type="primary", use_container_width=True):
-        with st.spinner("Optimizando secuencias para la semana..."):
-            try:
-                year, week_num = map(int, semana_sel.split("-W"))
-                fecha_inicio_str = str(datetime.date.fromisocalendar(year, week_num, 1))
-            except ValueError:
-                st.error("Formato de semana inválido.")
-                st.stop()
-            
-            semanas_registradas = get_semanas() or []
-            semanas_a_optimizar = [
-                s for s in semanas_registradas 
-                if s["fecha_inicio"] == fecha_inicio_str and s["maquina_codigo"] in ["M8", "M10", "M14"]
-            ]
-            
-            if not semanas_a_optimizar:
-                st.warning("No se encontraron semanas programadas para M8, M10 o M14 en esta fecha. Regístrelas en la página de Semanas.")
-            else:
-                total_evaluadas = 0
-                total_antes_h = 0.0
-                total_despues_h = 0.0
-                optimizados_con_exito = 0
+    if can("optimizar"):
+        if st.button("▶ Ejecutar Optimizador", type="primary", use_container_width=True):
+            with st.spinner("Optimizando secuencias para la semana..."):
+                try:
+                    year, week_num = map(int, semana_sel.split("-W"))
+                    fecha_inicio_str = str(datetime.date.fromisocalendar(year, week_num, 1))
+                except ValueError:
+                    st.error("Formato de semana inválido.")
+                    st.stop()
                 
-                for sem in semanas_a_optimizar:
-                    semanas = get_semanas() or []
-                    semana_obj = next((s for s in semanas if s.get("id") == 1), None)
-                    semana_id = semana_obj["id"] if semana_obj else 1
-                    resultado = ejecutar_optimizador(semana_id=semana_id)
-                    if resultado:
-                        total_evaluadas += resultado.get("ordenes_evaluadas", 0)
-                        total_antes_h += resultado.get("setup_antes_horas", 0.0)
-                        total_despues_h += resultado.get("setup_despues_horas", 0.0)
-                        optimizados_con_exito += 1
-                        
-                if optimizados_con_exito > 0:
-                    reduccion_pct = round(((total_antes_h - total_despues_h) / total_antes_h * 100.0), 1) if total_antes_h > 0 else 0.0
-                    st.session_state["optimizer_success_msg"] = (
-                        f"✓ {total_evaluadas} órdenes secuenciadas | "
-                        f"Setup reducido de {total_antes_h:.1f}h a {total_despues_h:.1f}h "
-                        f"({reduccion_pct}% mejora)"
-                    )
-                    st.rerun()
+                semanas_registradas = get_semanas() or []
+                semanas_a_optimizar = [
+                    s for s in semanas_registradas 
+                    if s["fecha_inicio"] == fecha_inicio_str and s["maquina_codigo"] in ["M8", "M10", "M14"]
+                ]
+                
+                if not semanas_a_optimizar:
+                    st.warning("No se encontraron semanas programadas para M8, M10 o M14 en esta fecha. Regístrelas en la página de Semanas.")
                 else:
-                    st.error("Error al ejecutar el optimizador en las semanas correspondientes.")
+                    total_evaluadas = 0
+                    total_antes_h = 0.0
+                    total_despues_h = 0.0
+                    optimizados_con_exito = 0
+                    
+                    for sem in semanas_a_optimizar:
+                        semanas = get_semanas() or []
+                        semana_obj = next((s for s in semanas if s.get("id") == 1), None)
+                        semana_id = semana_obj["id"] if semana_obj else 1
+                        resultado = ejecutar_optimizador(semana_id=semana_id)
+                        if resultado:
+                            total_evaluadas += resultado.get("ordenes_evaluadas", 0)
+                            total_antes_h += resultado.get("setup_antes_horas", 0.0)
+                            total_despues_h += resultado.get("setup_despues_horas", 0.0)
+                            optimizados_con_exito += 1
+                            
+                    if optimizados_con_exito > 0:
+                        reduccion_pct = round(((total_antes_h - total_despues_h) / total_antes_h * 100.0), 1) if total_antes_h > 0 else 0.0
+                        st.session_state["optimizer_success_msg"] = (
+                            f"✓ {total_evaluadas} órdenes secuenciadas | "
+                            f"Setup reducido de {total_antes_h:.1f}h a {total_despues_h:.1f}h "
+                            f"({reduccion_pct}% mejora)"
+                        )
+                        st.rerun()
+                    else:
+                        st.error("Error al ejecutar el optimizador en las semanas correspondientes.")
+    else:
+        st.info("🔒 No tienes permisos para ejecutar el optimizador.")

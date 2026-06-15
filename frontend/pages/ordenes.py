@@ -5,8 +5,12 @@ from utils.api_client import (
     get_maquinas, get_clientes, get_materiales, get_cilindros,
     get_ordenes, crear_orden, actualizar_orden, get_tipos_bolsa
 )
+from auth import require_login, can, render_sidebar
+
+require_login()
 
 st.set_page_config(layout="wide", page_icon="🏭")
+render_sidebar()
 st.title("📋 Órdenes de Fabricación")
 
 # Cargar catálogos al inicio y validar disponibilidad del backend
@@ -71,19 +75,20 @@ with tab_lista:
         # Para garantizar compatibilidad, mostramos un selector numérico o un selectbox de ID debajo de la tabla
         st.dataframe(df, width='stretch', hide_index=True)
         
-        st.write("---")
-        st.subheader("Seleccionar OF para Edición")
-        selected_id = st.selectbox(
-            "Selecciona una Orden de Fabricación para editar sus detalles:",
-            options=[None] + [of["id"] for of in ordenes],
-            format_func=lambda x: f"OF: {next((of['codigo_of'] for of in ordenes if of['id'] == x), '')} - {next((of['descripcion'][:50] for of in ordenes if of['id'] == x), '')}" if x is not None else "-- Seleccionar --"
-        )
-        
-        if selected_id is not None:
-            of_sel = next(of for of in ordenes if of["id"] == selected_id)
-            st.session_state.of_para_editar = of_sel
-            st.success(f"OF {of_sel['codigo_of']} seleccionada. Dirígete a la pestaña '{tab_nueva_nombre}' para continuar.")
-            st.button("Ir a Editar", type="primary")
+        if can("editar_of"):
+            st.write("---")
+            st.subheader("Seleccionar OF para Edición")
+            selected_id = st.selectbox(
+                "Selecciona una Orden de Fabricación para editar sus detalles:",
+                options=[None] + [of["id"] for of in ordenes],
+                format_func=lambda x: f"OF: {next((of['codigo_of'] for of in ordenes if of['id'] == x), '')} - {next((of['descripcion'][:50] for of in ordenes if of['id'] == x), '')}" if x is not None else "-- Seleccionar --"
+            )
+            
+            if selected_id is not None:
+                of_sel = next(of for of in ordenes if of["id"] == selected_id)
+                st.session_state.of_para_editar = of_sel
+                st.success(f"OF {of_sel['codigo_of']} seleccionada. Dirígete a la pestaña '{tab_nueva_nombre}' para continuar.")
+                st.button("Ir a Editar", type="primary")
 
 def _formulario_of(of_existente: dict = None):
     es_ed = of_existente is not None
@@ -255,11 +260,17 @@ def _formulario_of(of_existente: dict = None):
 
 with tab_nueva:
     if es_edicion:
-        st.info("Modo Edición Activado")
-        if st.button("❌ Cancelar Edición y volver a Crear"):
-            st.session_state.of_para_editar = None
-            st.rerun()
-        _formulario_of(st.session_state.of_para_editar)
+        if can("editar_of"):
+            st.info("Modo Edición Activado")
+            if st.button("❌ Cancelar Edición y volver a Crear"):
+                st.session_state.of_para_editar = None
+                st.rerun()
+            _formulario_of(st.session_state.of_para_editar)
+        else:
+            st.error("No tienes permisos para editar órdenes.")
     else:
-        st.subheader("Crear una Nueva Orden de Fabricación")
-        _formulario_of()
+        if can("crear_of"):
+            st.subheader("Crear una Nueva Orden de Fabricación")
+            _formulario_of()
+        else:
+            st.info("No tienes permisos para crear órdenes.")

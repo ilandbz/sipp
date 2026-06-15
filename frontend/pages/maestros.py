@@ -6,8 +6,16 @@ from utils.api_client import (
     get_cilindros, crear_cilindro, actualizar_cilindro,
     get_tipos_bolsa, actualizar_tipo_bolsa
 )
+from auth import require_login, can, render_sidebar
+
+require_login()
+
+if not can("gestionar_maestros"):
+    st.error("Acceso restringido — Solo Programador")
+    st.stop()
 
 st.set_page_config(page_title="Maestros | SIPP", page_icon="🏭", layout="wide")
+render_sidebar()
 
 st.title("🗂️ Mantenimiento de Maestros")
 

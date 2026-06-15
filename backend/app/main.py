@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routers import ordenes, maquinas, secuencias, optimizador, kpi, clientes, materiales, cilindros, semanas, tipos_bolsa, usuarios, paradas, franquicias
+from app.api.routers import ordenes, maquinas, secuencias, optimizador, kpi, clientes, materiales, cilindros, semanas, tipos_bolsa, usuarios, paradas, franquicias, auth
 from app.core.config import settings
 
 app = FastAPI(
@@ -10,6 +10,7 @@ app = FastAPI(
 )
 
 # Registrar routers con prefijo global /api/v1
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(ordenes.router, prefix="/api/v1")
 app.include_router(maquinas.router, prefix="/api/v1")
 app.include_router(secuencias.router, prefix="/api/v1")

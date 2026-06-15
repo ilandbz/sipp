@@ -5,8 +5,16 @@ import io
 from utils.api_client import (
     get_plan_semanal, get_kpi_semanal, get_semanas, get_optimizaciones_log
 )
+from auth import require_login, can, render_sidebar
+
+require_login()
+
+if not can("ver_reportes"):
+    st.error("Acceso restringido")
+    st.stop()
 
 st.set_page_config(layout="wide", page_title="SIPP — Reportes", page_icon="🏭")
+render_sidebar()
 
 def opciones_semanas():
     today = datetime.date.today()

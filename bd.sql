@@ -319,10 +319,22 @@ COMMENT ON TABLE sipp.icc_cache IS
 CREATE TABLE sipp.usuarios (
     id              SERIAL PRIMARY KEY,
     username        VARCHAR(50) NOT NULL UNIQUE,
+    password_hash   VARCHAR(200),
     nombre_completo VARCHAR(150),
     rol             VARCHAR(30) NOT NULL 
         CHECK (rol IN ('PROGRAMADOR','JEFE_PRODUCCION','OPERADOR')),
     activo          BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- 10c. TABLA DE SESIONES (AUTENTICACIÓN)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sipp.sesiones (
+    id              SERIAL PRIMARY KEY,
+    usuario_id      INT REFERENCES sipp.usuarios(id) ON DELETE CASCADE,
+    token           VARCHAR(100) NOT NULL UNIQUE,
+    expira_en       TIMESTAMPTZ NOT NULL,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 

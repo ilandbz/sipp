@@ -16,6 +16,7 @@ from .setup_historial import SetupHistorial
 from .franquicia import Franquicia
 from .ultimo_estado_maquina import UltimoEstadoMaquina
 from .parada import Parada
+from .sesion import Sesion
 
 __all__ = [
     "Maquina",
@@ -36,4 +37,5 @@ __all__ = [
     "Franquicia",
     "UltimoEstadoMaquina",
     "Parada",
+    "Sesion",
 ]

@@ -11,3 +11,5 @@ httpx
 python-dotenv
 python-multipart
 openpyxl
+passlib[bcrypt]
+
