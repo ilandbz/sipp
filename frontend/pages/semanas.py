@@ -1,0 +1,288 @@
+import streamlit as st
+import datetime
+import pandas as pd
+from utils.api_client import (
+    get_maquinas, get_semanas, crear_semana, actualizar_estado_semana, get_semana_detalle,
+    get_ofs_disponibles, agregar_of_a_semana, registrar_parada, reordenar_semana
+)
+
+st.set_page_config(layout="wide", page_icon="🏭")
+st.title("📅 Semanas de Programación")
+
+# Cargar catálogos y validar disponibilidad del backend
+maquinas = get_maquinas()
+semanas = get_semanas()
+
+if maquinas is None or semanas is None:
+    st.error("⚠ Backend no disponible. Verifique que FastAPI esté corriendo en localhost:8000")
+    st.stop()
+
+# Dividir la pantalla en 2 columnas para creación y listado
+col_crear, col_lista = st.columns([1, 2])
+
+with col_crear:
+    st.subheader("➕ Nueva Semana")
+    
+    if "semana_creada_msg" in st.session_state:
+        st.success(st.session_state.pop("semana_creada_msg"))
+    
+    # Crear mapeo de opciones de maquina
+    maq_opciones = {m["codigo"]: m["id"] for m in maquinas if m.get("activa")}
+    
+    if not maq_opciones:
+        st.warning("No hay máquinas activas disponibles.")
+    else:
+        with st.form("form_nueva_semana"):
+            maq_sel = st.selectbox("Máquina *", list(maq_opciones.keys()))
+            fecha_inicio = st.date_input("Fecha de inicio *", value=datetime.date.today())
+            fecha_fin = st.date_input("Fecha de fin *", value=datetime.date.today() + datetime.timedelta(days=4))
+            
+            submitted = st.form_submit_button("Crear Semana", type="primary", use_container_width=True)
+            
+            if submitted:
+                if fecha_inicio > fecha_fin:
+                    st.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
+                else:
+                    dias_habiles = 0
+                    curr = fecha_inicio
+                    while curr <= fecha_fin:
+                        if curr.weekday() < 5:
+                            dias_habiles += 1
+                        curr += datetime.timedelta(days=1)
+                    
+                    horas_disp_calc = dias_habiles * 8.0
+                    
+                    payload = {
+                        "maquina_id": maq_opciones[maq_sel],
+                        "fecha_inicio": str(fecha_inicio),
+                        "fecha_fin": str(fecha_fin),
+                        "estado": "BORRADOR"
+                    }
+                    res = crear_semana(payload)
+                    if res:
+                        st.session_state["semana_creada_msg"] = f"Semana creada: {dias_habiles} días hábiles = {horas_disp_calc:.1f} horas disponibles"
+                        st.rerun()
+
+with col_lista:
+    st.subheader("Lista de Semanas Registradas")
+    
+    if not semanas:
+        st.info("No hay semanas de programación registradas.")
+    else:
+        # Preparar data
+        df_semanas = []
+        for s in semanas:
+            def badge_estado(est: str) -> str:
+                colores = {
+                    "BORRADOR": "🔘 BORRADOR",
+                    "CONFIRMADA": "🟢 CONFIRMADA",
+                    "EN_EJECUCION": "🔵 EN EJECUCIÓN",
+                    "CERRADA": "⚫ CERRADA"
+                }
+                return colores.get(est, est)
+                
+            df_semanas.append({
+                "ID": s["id"],
+                "Máquina": s["maquina_codigo"] or f"ID: {s['maquina_id']}",
+                "Fecha Inicio": s["fecha_inicio"],
+                "Fecha Fin": s["fecha_fin"],
+                "Horas Disponibles": f"{s['horas_disponibles'] or 0:.1f} h",
+                "Estado": badge_estado(s["estado"]),
+                "estado_raw": s["estado"]
+            })
+            
+        df = pd.DataFrame(df_semanas)
+        st.dataframe(df[["ID", "Máquina", "Fecha Inicio", "Fecha Fin", "Horas Disponibles", "Estado"]], width='stretch', hide_index=True)
+        
+        # Selector para ver detalles y cambiar estados
+        st.write("---")
+        st.subheader("Acciones de Semana")
+        selected_semana_id = st.selectbox(
+            "Selecciona una semana para ver su cola de producción o cambiar su estado:",
+            options=[None] + [s["id"] for s in semanas],
+            format_func=lambda x: f"ID: {x} - {next((s['maquina_codigo'] for s in semanas if s['id'] == x), '')} ({next((s['fecha_inicio'] for s in semanas if s['id'] == x), '')} al {next((s['fecha_fin'] for s in semanas if s['id'] == x), '')})" if x is not None else "-- Seleccionar --"
+        )
+        
+        if selected_semana_id is not None:
+            # Buscar la semana seleccionada
+            semana_sel = next(s for s in semanas if s["id"] == selected_semana_id)
+            
+            # Cambiar estado
+            col_est1, col_est2 = st.columns(2)
+            nuevo_estado = col_est1.selectbox(
+                "Cambiar estado de la semana a:",
+                options=["BORRADOR", "CONFIRMADA", "EN_EJECUCION", "CERRADA"],
+                index=["BORRADOR", "CONFIRMADA", "EN_EJECUCION", "CERRADA"].index(semana_sel["estado"])
+            )
+            
+            if col_est2.button("💾 Actualizar Estado", type="secondary", use_container_width=True):
+                res_est = actualizar_estado_semana(selected_semana_id, nuevo_estado)
+                if res_est:
+                    st.success(f"Estado actualizado a {nuevo_estado} ✓")
+                    st.rerun()
+            
+            # Detalle de la semana y sus secuencias
+            st.write("---")
+            st.subheader(f"📋 Cola de Producción para Semana ID: {selected_semana_id}")
+            
+            detalles = get_semana_detalle(selected_semana_id)
+            if not detalles or "secuencias" not in detalles or not detalles["secuencias"]:
+                st.info("Esta semana no tiene secuencias de producción asignadas aún. Ejecuta el optimizador para programar OFs.")
+            else:
+                df_seq = pd.DataFrame(detalles["secuencias"])
+                
+                # Formatear estados en las secuencias
+                def badge_seq(est: str) -> str:
+                    colores = {
+                        "PENDIENTE": "🔘 PENDIENTE",
+                        "EN_PROCESO": "🔵 EN PROCESO",
+                        "COMPLETADA": "🟢 COMPLETADA",
+                        "OMITIDA": "⚫ OMITIDA",
+                    }
+                    return colores.get(est, est)
+                df_seq["Estado Secuencia"] = df_seq["estado"].apply(badge_seq)
+                
+                st.dataframe(
+                    df_seq[["posicion", "codigo_of", "medida_texto", "material", "costo_setup_min", "motivo_setup", "Estado Secuencia"]],
+                    column_config={
+                        "posicion": st.column_config.NumberColumn("#", width="small"),
+                        "codigo_of": st.column_config.TextColumn("Código OF"),
+                        "medida_texto": st.column_config.TextColumn("Medida"),
+                        "material": st.column_config.TextColumn("Material"),
+                        "costo_setup_min": st.column_config.NumberColumn("Setup (min)", format="%.0f"),
+                        "motivo_setup": st.column_config.TextColumn("Detalle de Setup"),
+                        "Estado Secuencia": st.column_config.TextColumn("Estado"),
+                    },
+                    hide_index=True,
+                    width='stretch'
+                )
+                
+                # Reordenamiento Manual
+                st.write("---")
+                st.subheader("⬆⬇ Reordenar Secuencias (Manual)")
+                with st.expander("Modificar orden de la cola"):
+                    ofs_actuales = [seq["codigo_of"] for seq in detalles["secuencias"]]
+                    seq_map = {seq["codigo_of"]: seq["orden_fabricacion_id"] for seq in detalles["secuencias"]}
+                    
+                    st.write("Selecciona una orden y usa las flechas para moverla, luego guarda.")
+                    
+                    if "orden_temporal" not in st.session_state:
+                        st.session_state["orden_temporal"] = ofs_actuales.copy()
+                        
+                    of_sel_mover = st.selectbox("Seleccionar OF a mover:", options=st.session_state["orden_temporal"])
+                    
+                    c_arriba, c_abajo, c_guardar = st.columns(3)
+                    
+                    if c_arriba.button("⬆ Subir", use_container_width=True):
+                        idx = st.session_state["orden_temporal"].index(of_sel_mover)
+                        if idx > 0:
+                            st.session_state["orden_temporal"].insert(idx - 1, st.session_state["orden_temporal"].pop(idx))
+                            st.rerun()
+                            
+                    if c_abajo.button("⬇ Bajar", use_container_width=True):
+                        idx = st.session_state["orden_temporal"].index(of_sel_mover)
+                        if idx < len(st.session_state["orden_temporal"]) - 1:
+                            st.session_state["orden_temporal"].insert(idx + 1, st.session_state["orden_temporal"].pop(idx))
+                            st.rerun()
+                            
+                    st.write("Orden actual (Borrador):")
+                    st.text(" -> ".join(st.session_state["orden_temporal"]))
+                    
+                    if c_guardar.button("💾 Guardar Nuevo Orden", type="primary", use_container_width=True):
+                        nuevos_ids = [seq_map[codigo] for codigo in st.session_state["orden_temporal"]]
+                        res = reordenar_semana(selected_semana_id, nuevos_ids)
+                        if res:
+                            st.success("Orden actualizado y setups recalculados.")
+                            del st.session_state["orden_temporal"]
+                            st.rerun()
+
+            # Paradas / Imprevistos
+            st.write("---")
+            st.subheader("⚡ Registrar Parada / Imprevisto")
+            with st.expander("Formulario de Paradas", expanded=False):
+                with st.form("form_parada"):
+                    c1, c2 = st.columns(2)
+                    inicio_p = c1.date_input("Día de inicio", value=datetime.date.today(), key="p_di")
+                    inicio_t = c2.time_input("Hora de inicio", value=datetime.datetime.now().time(), key="p_ti")
+                    
+                    fin_p = c1.date_input("Día de fin", value=datetime.date.today(), key="p_df")
+                    fin_t = c2.time_input("Hora de fin", value=datetime.datetime.now().time(), key="p_tf")
+                    
+                    tipo_p = st.selectbox("Tipo de Parada", ["AVERIA", "MANTENIMIENTO", "PERSONAL", "MATERIAL", "OTRO"])
+                    desc_p = st.text_area("Descripción / Motivo")
+                    
+                    if st.form_submit_button("Registrar y Desplazar Tiempos", type="primary"):
+                        inicio_dt = datetime.datetime.combine(inicio_p, inicio_t)
+                        fin_dt = datetime.datetime.combine(fin_p, fin_t)
+                        if fin_dt <= inicio_dt:
+                            st.error("La fecha/hora de fin debe ser posterior a la de inicio.")
+                        else:
+                            payload_parada = {
+                                "maquina_id": semana_sel["maquina_id"],
+                                "inicio": inicio_dt.isoformat(),
+                                "fin": fin_dt.isoformat(),
+                                "tipo": tipo_p,
+                                "descripcion": desc_p,
+                                "registrado_por": "Operador"
+                            }
+                            res_par = registrar_parada(payload_parada)
+                            if res_par:
+                                st.success(f"Parada registrada. {res_par.get('secuencias_afectadas', 0)} secuencias reprogramadas.")
+                                st.rerun()
+            
+            # Listado de OFs disponibles para agregar
+            st.write("---")
+            st.subheader("➕ Agregar Órdenes de Fabricación Disponibles")
+            
+            st.info("""
+            📋 **Flujo del sistema:**
+            1. Registra tus Órdenes de Fabricación en **Órdenes** 
+            2. Agrégalas aquí a la semana correspondiente
+            3. Ejecuta el optimizador desde el **Dashboard**
+            4. Revisa el plan en **Reportes**
+            """)
+            
+            if st.button("➕ Crear nueva OF", use_container_width=True):
+                st.switch_page("pages/ordenes.py")
+            
+            ofs_disp = get_ofs_disponibles(selected_semana_id)
+            if not ofs_disp:
+                st.info("No hay órdenes de fabricación pendientes para esta máquina.")
+            else:
+                buscar = st.text_input("🔍 Buscar OF por código o descripción")
+                if buscar:
+                    ofs_disp = [o for o in ofs_disp 
+                                      if buscar.upper() in o['codigo_of'].upper() 
+                                      or buscar.upper() in (o['descripcion'] or '').upper()]
+                                      
+                if not ofs_disp:
+                    st.info("No se encontraron resultados para la búsqueda.")
+                else:
+                    # Encabezados
+                    c_h1, c_h2, c_h3, c_h4, c_h5, c_h6 = st.columns([2, 3, 2, 2, 2, 2])
+                    c_h1.write("**OF**")
+                    c_h2.write("**Descripción**")
+                    c_h3.write("**Medida**")
+                    c_h4.write("**Material**")
+                    c_h5.write("**F. Entrega**")
+                    c_h6.write("")
+                    st.divider()
+
+                    for of in ofs_disp:
+                        col_of, col_desc, col_medida, col_material, col_entrega, col_btn = st.columns([2, 3, 2, 2, 2, 2])
+                        col_of.write(f"**{of['codigo_of']}**")
+                        col_desc.write(of['descripcion'] or "-")
+                        col_medida.write(of['medida_texto'] or "-")
+                        col_material.write(of.get('material_nombre') or "-")
+                        col_entrega.write(of['fecha_entrega'] or "-")
+                        
+                        btn_key = f"add_of_{selected_semana_id}_{of['id']}"
+                        if col_btn.button("➕ Agregar", key=btn_key, use_container_width=True):
+                            res_add = agregar_of_a_semana(selected_semana_id, of["id"])
+                            if res_add:
+                                st.success(f"OF {of['codigo_of']} agregada ✓")
+                                st.rerun()
+            
+            # Botón para ir al dashboard principal
+            st.write("---")
+            st.page_link("app.py", label="▶ Ir al Dashboard para Optimizar", icon="⚙️")
