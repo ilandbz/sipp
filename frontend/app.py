@@ -5,7 +5,7 @@ from utils.api_client import (
     get_kpi_semanal, get_cola_maquina, get_maquinas,
     ejecutar_optimizador, get_semanas, get_icc_matrix
 )
-from auth import login, logout, is_logged_in, get_rol, can, render_sidebar
+from auth import restaurar_sesion_desde_cookie, is_logged_in, login, logout, get_rol, can, render_sidebar
 from pathlib import Path
 
 st.set_page_config(
@@ -13,6 +13,9 @@ st.set_page_config(
     page_icon="🏭",
     layout="wide",
 )
+
+# Intentar restaurar sesión desde cookie PRIMERO
+restaurar_sesion_desde_cookie()
 
 # Si no está logueado → mostrar login
 if not is_logged_in():

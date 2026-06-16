@@ -7,6 +7,7 @@ source .venv/bin/activate
 
 pip install -r backend/requirements.txt -q
 pip install -r frontend/requirements.txt -q
+pip install extra-streamlit-components -q
 
 cd backend && python -m app.management.deploy_setup && cd ..
 

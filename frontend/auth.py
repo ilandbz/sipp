@@ -1,8 +1,13 @@
 import streamlit as st
 import requests
 import os
+import extra_streamlit_components as stx
+from datetime import datetime, timedelta
 
 BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
+def get_cookie_manager():
+    return stx.CookieManager(key="sipp_cookies")
 
 def login(username: str, password: str) -> bool:
     try:
@@ -13,10 +18,18 @@ def login(username: str, password: str) -> bool:
         )
         if r.status_code == 200:
             data = r.json()
-            st.session_state["token"] = data["token"]
+            # Guardar en session_state
+            st.session_state["token"]   = data["token"]
             st.session_state["usuario"] = data["usuario"]
-            st.session_state["rol"] = data["rol"]
-            st.session_state["nombre"] = data["usuario"]["nombre_completo"]
+            st.session_state["rol"]     = data["rol"]
+            st.session_state["nombre"]  = data["usuario"]["nombre_completo"]
+            # Guardar token en cookie (persiste entre recargas)
+            cookie_manager = get_cookie_manager()
+            cookie_manager.set(
+                "sipp_token", 
+                data["token"],
+                expires_at=datetime.now() + timedelta(hours=8)
+            )
             return True
         return False
     except Exception:
@@ -33,28 +46,61 @@ def logout():
             )
         except Exception:
             pass
+    # Limpiar cookie
+    cookie_manager = get_cookie_manager()
+    cookie_manager.delete("sipp_token")
+    # Limpiar session_state
     for key in ["token", "usuario", "rol", "nombre"]:
         st.session_state.pop(key, None)
 
+def restaurar_sesion_desde_cookie() -> bool:
+    """
+    Intenta restaurar la sesión desde la cookie si session_state está vacío.
+    Llama esto al inicio de CADA página antes de require_login().
+    """
+    if is_logged_in():
+        return True  # Ya hay sesión activa
+    
+    try:
+        cookie_manager = get_cookie_manager()
+        token = cookie_manager.get("sipp_token")
+        if not token:
+            return False
+        
+        # Verificar token con el backend
+        r = requests.get(
+            f"{BASE_URL}/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            st.session_state["token"]   = token
+            st.session_state["usuario"] = data
+            st.session_state["rol"]     = data["rol"]
+            st.session_state["nombre"]  = data["nombre_completo"]
+            return True
+        else:
+            # Token expirado — limpiar cookie
+            cookie_manager.delete("sipp_token")
+            return False
+    except Exception:
+        return False
+
 def is_logged_in() -> bool:
-    return "token" in st.session_state and st.session_state["token"] is not None
+    return bool(st.session_state.get("token"))
 
 def get_rol() -> str:
     return st.session_state.get("rol", "")
 
 def require_login():
-    """Llama esto al inicio de cada página."""
+    """Llama al inicio de cada página."""
+    restaurar_sesion_desde_cookie()
     if not is_logged_in():
         st.switch_page("app.py")
         st.stop()
 
 def can(accion: str) -> bool:
-    """
-    Verifica si el rol actual puede hacer una acción.
-    Acciones: 'crear_of', 'editar_of', 'optimizar', 
-              'ver_reportes', 'gestionar_maestros',
-              'registrar_parada', 'ver_dashboard'
-    """
     rol = get_rol()
     permisos = {
         "PROGRAMADOR": [
@@ -64,8 +110,7 @@ def can(accion: str) -> bool:
         ],
         "JEFE_PRODUCCION": [
             "optimizar", "ver_reportes",
-            "registrar_parada", "ver_dashboard",
-            "crear_of"
+            "registrar_parada", "ver_dashboard", "crear_of"
         ],
         "OPERADOR": [
             "registrar_parada", "ver_dashboard"
