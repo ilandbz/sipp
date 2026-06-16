@@ -114,14 +114,38 @@ class OrdenFabricacionUpdate(BaseModel):
 class OrdenFabricacionRead(BaseModel):
     id: int
     codigo_of: str
+    codigo_pt: Optional[str] = None
     descripcion: Optional[str] = None
+    referencia: Optional[str] = None
     estado: str = "PENDIENTE"
     maquina_asignada_id: Optional[int] = None
     material_id: Optional[int] = None
-    fecha_entrega: Optional[date] = None
-    cantidad_programada: Optional[float] = None
+    cliente_id: Optional[int] = None
+    cilindro_id: Optional[int] = None
+    tipo_bolsa_id: Optional[int] = None
+    medida_texto: Optional[str] = None
+    ancho_mm: Optional[float] = None
+    alto_mm: Optional[float] = None
+    fuelle_mm: Optional[float] = None
     ancho_bobina_mm: Optional[float] = None
+    gramaje: Optional[float] = None
+    num_colores: Optional[int] = None
+    colores_detalle: Optional[str] = None
+    cantidad_pedido: Optional[float] = None
+    cantidad_programada: Optional[float] = None
+    unidad_medida: Optional[str] = None
+    fecha_entrega: Optional[date] = None
+    fecha_emision: Optional[date] = None
+    fecha_atencion: Optional[date] = None
+    prioridad: Optional[int] = None
+    franquicia_nivel: Optional[int] = None
+    horas_produccion: Optional[float] = None
+    observacion: Optional[str] = None
+    tipo_produccion: Optional[str] = None
+    importado_en: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
     maquina_codigo: Optional[str] = None
     material_nombre: Optional[str] = None
     cliente_nombre: Optional[str] = None

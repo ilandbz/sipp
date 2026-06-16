@@ -14,54 +14,66 @@ from app.services.icc import calcular_ancho_bobina
 
 router = APIRouter(prefix="/ordenes", tags=["Órdenes"])
 
-@router.get("/", response_model=List[OrdenFabricacionRead])
+@router.get("/", response_model=list[OrdenFabricacionRead])
 async def listar_ordenes(
     maquina: Optional[str] = None,
     estado: Optional[str] = None,
     buscar: Optional[str] = None,
     db: AsyncSession = Depends(get_session)
 ):
-    query = select(
-        OrdenFabricacion,
-        Maquina.codigo.label("maquina_codigo"),
-        Material.tipo.label("material_nombre"),
-        Cliente.razon_social.label("cliente_nombre")
-    ).join(
-        Maquina, Maquina.id == OrdenFabricacion.maquina_asignada_id, isouter=True
-    ).join(
-        Material, Material.id == OrdenFabricacion.material_id, isouter=True
-    ).join(
-        Cliente, Cliente.id == OrdenFabricacion.cliente_id, isouter=True
-    )
-    
-    # Aplicar filtros
-    if maquina and maquina != "Todas":
-        query = query.where(Maquina.codigo == maquina)
-    if estado and estado != "Todos":
-        query = query.where(OrdenFabricacion.estado == estado)
-    if buscar:
-        buscar_pattern = f"%{buscar}%"
-        query = query.where(
-            or_(
-                OrdenFabricacion.codigo_of.ilike(buscar_pattern),
-                OrdenFabricacion.descripcion.ilike(buscar_pattern),
-                OrdenFabricacion.codigo_pt.ilike(buscar_pattern)
-            )
-        )
+    try:
+        from sqlalchemy import text
         
-    result = await db.execute(query)
-    rows = result.all()
-    
-    ordenes_read = []
-    for row in rows:
-        of = row[0]
-        of_data = of.model_dump()
-        of_data["maquina_codigo"] = row[1]
-        of_data["material_nombre"] = row[2]
-        of_data["cliente_nombre"] = row[3]
-        ordenes_read.append(OrdenFabricacionRead(**of_data))
+        filtros = ["1=1"]
+        params = {}
         
-    return ordenes_read
+        if maquina and maquina != "Todas":
+            filtros.append("m.codigo = :maquina")
+            params["maquina"] = maquina
+        if estado and estado != "Todos":
+            filtros.append("of.estado = :estado")
+            params["estado"] = estado
+        if buscar:
+            filtros.append("""
+                (of.codigo_of ILIKE :buscar 
+                OR of.descripcion ILIKE :buscar)
+            """)
+            params["buscar"] = f"%{buscar}%"
+        
+        where = " AND ".join(filtros)
+        
+        sql = text(f"""
+            SELECT 
+                of.id, of.codigo_of, of.codigo_pt, of.descripcion,
+                of.referencia, of.estado, of.maquina_asignada_id,
+                of.material_id, of.cliente_id, of.cilindro_id,
+                of.tipo_bolsa_id, of.medida_texto,
+                of.ancho_mm, of.alto_mm, of.fuelle_mm,
+                of.ancho_bobina_mm, of.gramaje, of.num_colores,
+                of.colores_detalle, of.cantidad_pedido,
+                of.cantidad_programada, of.unidad_medida,
+                of.fecha_entrega, of.fecha_emision, of.fecha_atencion,
+                of.prioridad, of.franquicia_nivel,
+                of.horas_produccion, of.observacion,
+                of.tipo_produccion, of.created_at, of.updated_at,
+                m.codigo as maquina_codigo,
+                mat.tipo as material_nombre,
+                c.razon_social as cliente_nombre
+            FROM sipp.ordenes_fabricacion of
+            LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
+            LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
+            LEFT JOIN sipp.clientes c ON c.id = of.cliente_id
+            WHERE {where}
+            ORDER BY of.created_at DESC
+            LIMIT 200
+        """)
+        
+        result = await db.execute(sql, params)
+        rows = result.mappings().all()
+        return [dict(r) for r in rows]
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{id}", response_model=OrdenFabricacionRead)
 async def obtener_orden(id: int, db: AsyncSession = Depends(get_session)):

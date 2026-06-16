@@ -57,17 +57,17 @@ with tab_lista:
             }
             prio_badge = prioridad_map.get(of.get("prioridad"), "🟢 Baja")
             df_data.append({
-                "ID": of["id"],
+                "ID": of.get("id"),
                 "Prioridad": prio_badge,
-                "Código OF": of["codigo_of"],
-                "Código PT": of["codigo_pt"] or "",
-                "Descripción": of["descripcion"] or "",
-                "Medida": of["medida_texto"] or "",
-                "Material": of["material_nombre"] or "",
-                "Máquina": of["maquina_codigo"] or "",
+                "Código OF": of.get("codigo_of", ""),
+                "Código PT": of.get("codigo_pt", "") or "",
+                "Descripción": of.get("descripcion", "") or "",
+                "Medida": of.get("medida_texto", "") or "",
+                "Material": of.get("material_nombre", of.get("material_id", "")),
+                "Máquina": of.get("maquina_codigo", of.get("maquina_asignada_id", "")),
                 "Fecha Atención": of.get("fecha_atencion") or "",
-                "Fecha Entrega": of["fecha_entrega"] or "",
-                "Estado": of["estado"]
+                "Fecha Entrega": of.get("fecha_entrega") or "",
+                "Estado": of.get("estado", "")
             })
         df = pd.DataFrame(df_data)
         if "Fecha Entrega" in df.columns and not df["Fecha Entrega"].empty:
@@ -84,14 +84,14 @@ with tab_lista:
             st.subheader("Seleccionar OF para Edición")
             selected_id = st.selectbox(
                 "Selecciona una Orden de Fabricación para editar sus detalles:",
-                options=[None] + [of["id"] for of in ordenes],
-                format_func=lambda x: f"OF: {next((of['codigo_of'] for of in ordenes if of['id'] == x), '')} - {next((of['descripcion'][:50] for of in ordenes if of['id'] == x), '')}" if x is not None else "-- Seleccionar --"
+                options=[None] + [of.get("id") for of in ordenes],
+                format_func=lambda x: f"OF: {next((of.get('codigo_of', '') for of in ordenes if of.get('id') == x), '')} - {next(((of.get('descripcion') or '')[:50] for of in ordenes if of.get('id') == x), '')}" if x is not None else "-- Seleccionar --"
             )
             
             if selected_id is not None:
-                of_sel = next(of for of in ordenes if of["id"] == selected_id)
+                of_sel = next(of for of in ordenes if of.get("id") == selected_id)
                 st.session_state.of_para_editar = of_sel
-                st.success(f"OF {of_sel['codigo_of']} seleccionada. Dirígete a la pestaña '{tab_nueva_nombre}' para continuar.")
+                st.success(f"OF {of_sel.get('codigo_of', '')} seleccionada. Dirígete a la pestaña '{tab_nueva_nombre}' para continuar.")
                 st.button("Ir a Editar", type="primary")
 
 def _formulario_of(of_existente: dict = None):
