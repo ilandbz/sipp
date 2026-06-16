@@ -222,3 +222,33 @@ def get_paradas(maquina_id: int = None):
 @st.cache_data(ttl=30)
 def get_optimizaciones_log():
     return _get("/api/v1/optimizador/log")
+
+def cambiar_password(payload: dict):
+    token = st.session_state.get("token", "")
+    try:
+        r = requests.put(
+            f"{BASE_URL}/api/v1/auth/cambiar-password",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
+def actualizar_perfil(payload: dict):
+    token = st.session_state.get("token", "")
+    try:
+        r = requests.put(
+            f"{BASE_URL}/api/v1/auth/actualizar-perfil",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None

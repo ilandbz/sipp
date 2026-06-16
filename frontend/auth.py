@@ -84,9 +84,15 @@ def render_sidebar(opciones_semanas=None):
     semana_sel = None
     
     with st.sidebar:
-        # 1. Info del usuario y Cerrar Sesión
-        st.markdown(f"👤 **{st.session_state.get('nombre', '')}**")
-        st.caption(f"Rol: {get_rol()}")
+        # 1. Info del usuario y Perfil
+        col_user, col_perfil = st.columns([2, 1])
+        with col_user:
+            st.markdown(f"👤 **{st.session_state.get('nombre', 'Usuario')}**")
+            st.caption(f"Rol: {get_rol()}")
+        with col_perfil:
+            if st.button("⚙️", key="perfil_btn", help="Mi perfil y cambio de contraseña"):
+                st.switch_page("pages/perfil.py")
+        
         if st.button("🚪 Cerrar sesión", key="logout_btn", use_container_width=True):
             logout()
             st.switch_page("app.py")

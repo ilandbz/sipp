@@ -96,6 +96,13 @@ kpis = kpis_raw if kpis_raw is not None else []
 # ── KPIs (fila superior) ──────────────────────────────────
 st.subheader(f"Semana en curso: {semana_sel}")
 
+if get_rol() in ["PROGRAMADOR", "JEFE_PRODUCCION"]:
+    st.info(
+        "💡 Recuerda cambiar tu contraseña inicial en "
+        "[Mi Perfil](/perfil)",
+        icon="🔒"
+    )
+
 if "optimizer_success_msg" in st.session_state:
     st.success(st.session_state.pop("optimizer_success_msg"))
 col1, col2, col3, col4 = st.columns(4)

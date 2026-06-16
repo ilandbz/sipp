@@ -168,3 +168,144 @@ async def logout(token: str = Depends(get_token_from_header), db: AsyncSession =
         await db.commit()
         
     return {"message": "Sesión cerrada correctamente"}
+
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str
+    password_nuevo: str
+    confirmar: str
+
+class ActualizarPerfilRequest(BaseModel):
+    nombre_completo: str
+
+@router.put("/cambiar-password")
+async def cambiar_password(
+    payload: CambiarPasswordRequest,
+    token: str = Depends(get_token_from_header),
+    db: AsyncSession = Depends(get_session)
+):
+    # 1. Buscar token en sesiones
+    stmt_sesion = select(Sesion).where(Sesion.token == token)
+    res_sesion = await db.execute(stmt_sesion)
+    sesion = res_sesion.scalars().first()
+    
+    if not sesion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión inválida o expirada"
+        )
+        
+    # 2. Verificar si expiró
+    ahora = datetime.now(timezone.utc)
+    expira_en = sesion.expira_en
+    if expira_en.tzinfo is None:
+        expira_en = expira_en.replace(tzinfo=timezone.utc)
+        
+    if expira_en < ahora:
+        await db.delete(sesion)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión expirada"
+        )
+        
+    # 3. Obtener usuario
+    stmt_usuario = select(Usuario).where(Usuario.id == sesion.usuario_id)
+    res_usuario = await db.execute(stmt_usuario)
+    user = res_usuario.scalars().first()
+    
+    if not user or not user.activo:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario inactivo o no encontrado"
+        )
+        
+    # 4. Validar contraseñas
+    if payload.password_nuevo != payload.confirmar:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Las contraseñas no coinciden"
+        )
+        
+    if len(payload.password_nuevo) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mínimo 6 caracteres"
+        )
+        
+    # Verificar password_actual con bcrypt
+    try:
+        pwd_bytes = payload.password_actual.encode("utf-8")
+        hash_bytes = user.password_hash.encode("utf-8")
+        is_valid = bcrypt.checkpw(pwd_bytes, hash_bytes)
+    except Exception:
+        is_valid = False
+        
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Contraseña actual incorrecta"
+        )
+        
+    # 5. Actualizar contraseña
+    pwd_hash = bcrypt.hashpw(payload.password_nuevo.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    user.password_hash = pwd_hash
+    db.add(user)
+    await db.commit()
+    
+    return {"mensaje": "Contraseña actualizada correctamente"}
+
+@router.put("/actualizar-perfil", response_model=UserResponse)
+async def actualizar_perfil(
+    payload: ActualizarPerfilRequest,
+    token: str = Depends(get_token_from_header),
+    db: AsyncSession = Depends(get_session)
+):
+    # 1. Buscar token en sesiones
+    stmt_sesion = select(Sesion).where(Sesion.token == token)
+    res_sesion = await db.execute(stmt_sesion)
+    sesion = res_sesion.scalars().first()
+    
+    if not sesion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión inválida o expirada"
+        )
+        
+    # 2. Verificar si expiró
+    ahora = datetime.now(timezone.utc)
+    expira_en = sesion.expira_en
+    if expira_en.tzinfo is None:
+        expira_en = expira_en.replace(tzinfo=timezone.utc)
+        
+    if expira_en < ahora:
+        await db.delete(sesion)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión expirada"
+        )
+        
+    # 3. Obtener usuario
+    stmt_usuario = select(Usuario).where(Usuario.id == sesion.usuario_id)
+    res_usuario = await db.execute(stmt_usuario)
+    user = res_usuario.scalars().first()
+    
+    if not user or not user.activo:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario inactivo o no encontrado"
+        )
+        
+    # 4. Actualizar nombre completo
+    user.nombre_completo = payload.nombre_completo
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        nombre_completo=user.nombre_completo,
+        rol=user.rol
+    )
+
