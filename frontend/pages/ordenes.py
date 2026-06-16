@@ -243,26 +243,26 @@ def _formulario_of(of_existente: dict = None):
             "codigo_of": codigo_of,
             "codigo_pt": codigo_pt.strip() or None,
             "descripcion": descripcion.strip() or None,
-            "cliente_id": cli_opciones.get(cli_sel) if cli_sel != "Sin cliente" else None,
-            "maquina_asignada_id": maq_opciones.get(maq_sel),
-            "material_id": mat_opciones.get(mat_sel),
-            "cilindro_id": cil_opciones.get(cil_sel) if cil_sel != "(ninguno)" else None,
-            "ancho_mm": ancho or None,
-            "alto_mm": alto or None,
-            "fuelle_mm": fuelle or None,
-            "distancia_base_mm": dist_base or None,
+            "cliente_id": int(cli_opciones[cli_sel]) if cli_sel != "Sin cliente" else None,
+            "maquina_asignada_id": int(maq_opciones[maq_sel]),
+            "material_id": int(mat_opciones[mat_sel]),
+            "cilindro_id": int(cil_opciones[cil_sel]) if cil_sel != "(ninguno)" else None,
+            "ancho_mm": float(ancho) if ancho > 0 else None,
+            "alto_mm": float(alto) if alto > 0 else None,
+            "fuelle_mm": float(fuelle) if fuelle > 0 else None,
+            "distancia_base_mm": float(dist_base) if dist_base > 0 else None,
             "leva_requerida": leva_req.strip() or None,
-            "gramaje": gramaje or None,
-            "num_colores": int(num_colores) or None,
+            "gramaje": float(gramaje) if gramaje > 0 else None,
+            "num_colores": int(num_colores) if num_colores > 0 else None,
             "colores_detalle": colores_det.strip() or None,
             "unidad_medida": "MIL",
-            "cantidad_programada": cant_prog or None,
-            "peso_por_millar": peso_mil or None,
+            "cantidad_programada": float(cant_prog) if cant_prog > 0 else None,
+            "peso_por_millar": float(peso_mil) if peso_mil > 0 else None,
             "fecha_entrega": str(fecha_entrega),
             "observacion": observacion.strip() or None,
             "estado": of_existente.get("estado", "PENDIENTE") if es_ed else "PENDIENTE",
             "prioridad": int(prioridad_sel.split(" - ")[0]),
-            "tipo_bolsa_id": bolsa_opciones.get(bolsa_sel) if bolsa_sel != "(ninguno)" else None,
+            "tipo_bolsa_id": int(bolsa_opciones[bolsa_sel]) if bolsa_sel != "(ninguno)" else None,
         }
 
         # Remove None values
@@ -289,17 +289,19 @@ def _formulario_of(of_existente: dict = None):
                 }
             st.rerun()
         else:
+            st.write("Payload enviado:", payload)
             res = crear_orden(payload)
-            if res:
-                codigo_generado = res.get("codigo_of", "")
+            if res and res.get("ok"):
+                codigo_generado = res["data"].get("codigo_of", "")
                 st.session_state["of_resultado"] = {
                     "ok": True,
                     "msg": f"✓ OF **{codigo_generado}** creada correctamente | Ancho bobina: {ancho_bobina} mm"
                 }
             else:
+                error_msg = res.get("error", "Error desconocido") if res else "Sin respuesta del servidor"
                 st.session_state["of_resultado"] = {
                     "ok": False,
-                    "msg": "❌ Error al crear la orden. Verifique los datos e intente nuevamente."
+                    "msg": f"❌ Error: {error_msg}"
                 }
             st.rerun()
 

@@ -121,7 +121,9 @@ async def generar_codigo_of(db: AsyncSession) -> str:
         siguiente = 1
     
     # Formato: 2606-0001
-    return f"{prefijo}-{siguiente:04d}"
+    codigo_of = f"{prefijo}-{siguiente:04d}"
+    print(f"Código generado: {codigo_of}")
+    return codigo_of
 
 @router.post("/", response_model=OrdenFabricacionRead, status_code=status.HTTP_201_CREATED)
 async def crear_orden(body: OrdenFabricacionCreate, db: AsyncSession = Depends(get_session)):
