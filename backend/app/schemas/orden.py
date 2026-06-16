@@ -111,12 +111,19 @@ class OrdenFabricacionUpdate(BaseModel):
     estado: Optional[str] = None
     observacion: Optional[str] = None
 
-class OrdenFabricacionRead(OrdenFabricacionBase):
+class OrdenFabricacionRead(BaseModel):
     id: int
+    codigo_of: str
+    descripcion: Optional[str] = None
+    estado: str = "PENDIENTE"
+    maquina_asignada_id: Optional[int] = None
+    material_id: Optional[int] = None
+    fecha_entrega: Optional[date] = None
+    cantidad_programada: Optional[float] = None
+    ancho_bobina_mm: Optional[float] = None
+    created_at: Optional[datetime] = None
     maquina_codigo: Optional[str] = None
     material_nombre: Optional[str] = None
     cliente_nombre: Optional[str] = None
-    importado_en: datetime
-    created_at: datetime
-    updated_at: datetime
+    
     model_config = {"from_attributes": True}

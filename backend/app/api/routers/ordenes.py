@@ -126,39 +126,71 @@ async def generar_codigo_of(db: AsyncSession) -> str:
     return codigo_of
 
 @router.post("/", response_model=OrdenFabricacionRead, status_code=status.HTTP_201_CREATED)
-async def crear_orden(body: OrdenFabricacionCreate, db: AsyncSession = Depends(get_session)):
+async def crear_orden(
+    body: OrdenFabricacionCreate,
+    db: AsyncSession = Depends(get_session)
+):
     try:
-        # Si el body NO trae codigo_of o viene vacío, autogenerarlo
-        body_data = body.model_dump()
-        if not body_data.get("codigo_of") or not body_data["codigo_of"].strip():
-            body_data["codigo_of"] = await generar_codigo_of(db)
+        # Generar código OF si no viene
+        codigo_of = body.codigo_of
+        if not codigo_of or not codigo_of.strip():
+            codigo_of = await generar_codigo_of(db)
         
-        # Check if OF already exists
-        existing = await db.execute(select(OrdenFabricacion).where(OrdenFabricacion.codigo_of == body_data["codigo_of"]))
-        if existing.scalars().first():
-            raise HTTPException(status_code=400, detail=f"La Orden de Fabricación {body_data['codigo_of']} ya existe")
-            
-        of = OrdenFabricacion(**body_data)
+        # Calcular ancho de bobina
+        ancho_bobina = None
+        if body.ancho_mm and body.fuelle_mm:
+            pega = body.pega_cm or 2.5
+            ancho_bobina = (body.ancho_mm + body.fuelle_mm) * 2 + (pega * 10)
         
-        # Auto-calcular ancho bobina si es posible
-        if not of.ancho_bobina_mm:
-            calc = calcular_ancho_bobina(of)
-            if calc > 0:
-                of.ancho_bobina_mm = calc
-                
+        # Crear objeto con datos del body
+        datos = body.model_dump(exclude_unset=False)
+        datos["codigo_of"] = codigo_of
+        datos["ancho_bobina_mm"] = ancho_bobina
+        datos["estado"] = "PENDIENTE"
+        from datetime import datetime
+        datos["importado_en"] = datetime.utcnow()
+        datos["created_at"] = datetime.utcnow()
+        datos["updated_at"] = datetime.utcnow()
+        
+        # Insertar usando SQL directo para evitar lazy loading
+        from sqlalchemy import text
+        
+        # Filtrar solo columnas que existen en la tabla
+        columnas_validas = [
+            "codigo_of", "codigo_pt", "descripcion", "referencia",
+            "cliente_id", "maquina_asignada_id", "material_id",
+            "cilindro_id", "tipo_bolsa_id", "medida_texto",
+            "ancho_mm", "alto_mm", "fuelle_mm", "ancho_bobina_mm",
+            "pega_cm", "gramaje", "num_colores", "colores_detalle",
+            "cantidad_programada", "unidad_medida", "fecha_entrega",
+            "prioridad", "estado", "observacion",
+            "importado_en", "created_at", "updated_at"
+        ]
+        
+        insert_datos = {k: v for k, v in datos.items() 
+                       if k in columnas_validas and v is not None}
+        
+        of = OrdenFabricacion(**insert_datos)
         db.add(of)
-        await db.flush()
+        await db.flush()  # Obtener el ID sin cerrar la sesión
+        of_id = of.id
         await db.commit()
         
-        # Reload with joined details
-        return await obtener_orden(of.id, db)
+        # Retornar solo los datos que ya tenemos (sin lazy load)
+        # We need to construct a valid dict matching the updated OrdenFabricacionRead.
+        # We merge insert_datos with the required default fields.
+        return {
+            **insert_datos,
+            "id": of_id,
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         raise HTTPException(
             status_code=500,
-            detail=f"Error interno: {str(e)} | {traceback.format_exc()}"
+            detail=f"Error interno: {str(e)}"
         )
 
 @router.patch("/{id}", response_model=OrdenFabricacionRead)
