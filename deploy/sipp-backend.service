@@ -1,0 +1,19 @@
+[Unit]
+Description=SIPP FastAPI Backend
+After=network.target postgresql.service
+
+[Service]
+User=root
+WorkingDirectory=/var/www/html/vygpack-sipp/backend
+EnvironmentFile=/var/www/html/vygpack-sipp/.env
+ExecStart=/var/www/html/vygpack-sipp/.venv/bin/gunicorn \
+    app.main:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000 \
+    --timeout 120
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
