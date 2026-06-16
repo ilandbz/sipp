@@ -308,3 +308,31 @@ async def reordenar_semana(semana_id: int, body: ReordenarRequest, db: AsyncSess
 
     await db.commit()
     return {"status": "ok", "message": "Secuencia reordenada correctamente"}
+
+@router.delete("/{id}")
+async def eliminar_semana(id: int, db: AsyncSession = Depends(get_session)):
+    semana = await db.get(SemanaProgramacion, id)
+    if not semana:
+        raise HTTPException(status_code=404, detail="Semana no encontrada")
+        
+    if semana.estado != "BORRADOR":
+        raise HTTPException(status_code=400, detail="Solo se pueden eliminar semanas en estado BORRADOR")
+        
+    # Restaurar OFs a PENDIENTE
+    stmt_update = text("""
+        UPDATE sipp.ordenes_fabricacion SET estado = 'PENDIENTE'
+        WHERE id IN (
+            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion WHERE semana_id = :semana_id
+        )
+    """)
+    await db.execute(stmt_update, {"semana_id": id})
+    
+    # Eliminar secuencias
+    stmt_delete = text("DELETE FROM sipp.secuencias_produccion WHERE semana_id = :semana_id")
+    await db.execute(stmt_delete, {"semana_id": id})
+    
+    # Eliminar semana
+    await db.delete(semana)
+    await db.commit()
+    
+    return {"mensaje": "Semana eliminada correctamente"}

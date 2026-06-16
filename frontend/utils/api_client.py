@@ -181,6 +181,9 @@ def get_semana_detalle(semana_id: int):
 def eliminar_of_semana(semana_id: int, secuencia_id: int):
     return _delete(f"/api/v1/semanas/{semana_id}/secuencias/{secuencia_id}")
 
+def eliminar_semana(id: int):
+    return _delete(f"/api/v1/semanas/{id}")
+
 # ── Optimizador ───────────────────────────────────────
 def ejecutar_optimizador(semana_id: int):
     return _post("/api/v1/optimizador/ejecutar", {"semana_id": semana_id})

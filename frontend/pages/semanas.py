@@ -75,31 +75,61 @@ with col_lista:
     if not semanas:
         st.info("No hay semanas de programación registradas.")
     else:
-        # Preparar data
-        df_semanas = []
-        for s in semanas:
-            def badge_estado(est: str) -> str:
-                colores = {
-                    "BORRADOR": "🔘 BORRADOR",
-                    "CONFIRMADA": "🟢 CONFIRMADA",
-                    "EN_EJECUCION": "🔵 EN EJECUCIÓN",
-                    "CERRADA": "⚫ CERRADA"
-                }
-                return colores.get(est, est)
-                
-            df_semanas.append({
-                "ID": s["id"],
-                "Máquina": s["maquina_codigo"] or f"ID: {s['maquina_id']}",
-                "Fecha Inicio": s["fecha_inicio"],
-                "Fecha Fin": s["fecha_fin"],
-                "Horas Disponibles": f"{s['horas_disponibles'] or 0:.1f} h",
-                "Estado": badge_estado(s["estado"]),
-                "estado_raw": s["estado"]
-            })
+        c1, c2, c3, c4, c5, c6 = st.columns([1, 2, 2, 2, 2, 3])
+        c1.write("**ID**")
+        c2.write("**Máquina**")
+        c3.write("**Inicio**")
+        c4.write("**Fin**")
+        c5.write("**Horas Disp.**")
+        c6.write("**Estado / Acciones**")
+        st.divider()
+
+        def badge_estado(est: str) -> str:
+            colores = {
+                "BORRADOR": "🔘 BORRADOR",
+                "CONFIRMADA": "🟢 CONFIRMADA",
+                "EN_EJECUCION": "🔵 EN EJECUCIÓN",
+                "CERRADA": "⚫ CERRADA"
+            }
+            return colores.get(est, est)
+
+        for semana in semanas:
+            col1, col2, col3, col4, col5, col6 = st.columns([1, 2, 2, 2, 2, 3])
+            col1.write(semana["id"])
+            maq_cod = semana["maquina_codigo"] or f"ID: {semana['maquina_id']}"
+            col2.write(maq_cod)
+            col3.write(semana["fecha_inicio"])
+            col4.write(semana["fecha_fin"])
+            col5.write(f"{semana['horas_disponibles'] or 0:.1f} h")
             
-        df = pd.DataFrame(df_semanas)
-        st.dataframe(df[["ID", "Máquina", "Fecha Inicio", "Fecha Fin", "Horas Disponibles", "Estado"]], width='stretch', hide_index=True)
-        
+            with col6:
+                estado_str = semana["estado"]
+                badge = badge_estado(estado_str)
+                if estado_str == "BORRADOR":
+                    c_badge, c_btn = st.columns([2, 1])
+                    c_badge.write(badge)
+                    if c_btn.button("🗑️", key=f"del_semana_{semana['id']}", help="Eliminar semana (solo BORRADOR)"):
+                        st.session_state[f"confirmar_del_{semana['id']}"] = True
+                else:
+                    st.write(badge)
+            
+            if st.session_state.get(f"confirmar_del_{semana['id']}"):
+                st.warning(f"¿Eliminar semana {maq_cod} ({semana['fecha_inicio']} - {semana['fecha_fin']})? Las OFs asignadas volverán a estado PENDIENTE.")
+                col_si, col_no = st.columns(2)
+                with col_si:
+                    if st.button("✅ Sí, eliminar", key=f"confirm_si_{semana['id']}", type="primary"):
+                        from utils.api_client import eliminar_semana
+                        resultado = eliminar_semana(semana['id'])
+                        if resultado:
+                            st.success("Semana eliminada")
+                            st.session_state.pop(f"confirmar_del_{semana['id']}", None)
+                            st.rerun()
+                        else:
+                            st.error("Error al eliminar")
+                with col_no:
+                    if st.button("❌ Cancelar", key=f"confirm_no_{semana['id']}"):
+                        st.session_state.pop(f"confirmar_del_{semana['id']}", None)
+                        st.rerun()
         # Selector para ver detalles y cambiar estados
         st.write("---")
         st.subheader("Acciones de Semana")
