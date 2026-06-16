@@ -1,0 +1,13 @@
+[server]
+# Tiempo en segundos para mantener el estado de la sesión después de que se desconecte el WebSocket (5 minutos)
+disconnectedSessionTTL = 300
+
+# Intervalo en segundos para enviar pings y mantener la conexión WebSocket activa (evita que firewalls/proxies cierren la conexión por inactividad)
+websocketPingInterval = 20
+websocketPingTimeout = 20
+
+# Desactivar la compresión WebSocket para evitar problemas con proxies reversos (Nginx, Cloudflare, etc.)
+enableWebsocketCompression = false
+
+[browser]
+gatherUsageStats = false
