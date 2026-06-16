@@ -39,24 +39,30 @@ with tab_lista:
             st.info("No se encontraron clientes con esa búsqueda.")
         else:
             # Encabezados
-            c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 2, 2])
+            c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 3, 2])
             c1.write("**Razón Social**")
             c2.write("**Marca**")
             c3.write("**Vendedor**")
-            c4.write("**Franquicia (ID)**")
-            c5.write("**Prioridad**")
-            c6.write("**Acciones**")
+            c4.write("**Franquicia**")
+            c5.write("**Acciones**")
             st.divider()
             
             for cli in clientes:
-                col1, col2, col3, col4, col5, col6 = st.columns([3, 2, 2, 2, 2, 2])
+                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 3, 2])
                 col1.write(cli["razon_social"])
                 col2.write(cli.get("marca") or "-")
                 col3.write(cli.get("vendedor") or "-")
-                col4.write(f"Nivel {cli.get('franquicia_id', 4)}")
-                col5.write(f"Prioridad {cli['prioridad']}")
                 
-                with col6:
+                franq_nivel = cli.get('franquicia_nivel') or 4
+                colores_franq = {
+                    1: "🔴 Prioritario",
+                    2: "🟠 Alto",
+                    3: "🟡 Normal",
+                    4: "⚪ Estándar"
+                }
+                col4.write(colores_franq.get(franq_nivel, "⚪ Estándar"))
+                
+                with col5:
                     btn1, btn2 = st.columns(2)
                     if btn1.button("✏️", key=f"edit_{cli['id']}", help="Editar cliente"):
                         st.session_state.cliente_editando = cli
@@ -99,11 +105,7 @@ with tab_nuevo:
         franquicia_sel = col4.selectbox("Franquicia", list(franq_options.keys()), index=idx_franq)
         
         col5, col6 = st.columns(2)
-        prioridad_val = cli_data.get("prioridad", 3)
-        idx_prio = max(0, prioridad_val - 1)
-        prioridad_sel = col5.selectbox("Prioridad *", ["1 - Alta", "2 - Media", "3 - Baja"], index=idx_prio)
-        
-        ruc = col6.text_input("RUC", value=cli_data.get("ruc", "") or "")
+        ruc = col5.text_input("RUC", value=cli_data.get("ruc", "") or "")
         
         col7, col8 = st.columns(2)
         telefono = col7.text_input("Teléfono", value=cli_data.get("telefono", "") or "")
@@ -121,7 +123,6 @@ with tab_nuevo:
                     "marca": marca.strip() or None,
                     "vendedor": vendedor.strip() or None,
                     "franquicia_id": franq_options.get(franquicia_sel),
-                    "prioridad": int(prioridad_sel.split(" - ")[0]),
                     "ruc": ruc.strip() or None,
                     "telefono": telefono.strip() or None,
                     "direccion": direccion.strip() or None

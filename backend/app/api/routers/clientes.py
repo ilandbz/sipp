@@ -26,7 +26,9 @@ async def obtener_cliente(id: int, db: AsyncSession = Depends(get_session)):
 
 @router.post("/", response_model=ClienteRead, status_code=status.HTTP_201_CREATED)
 async def crear_cliente(body: ClienteCreate, db: AsyncSession = Depends(get_session)):
-    cliente = Cliente(**body.model_dump())
+    data = body.model_dump()
+    data.pop("prioridad", None)
+    cliente = Cliente(**data)
     db.add(cliente)
     await db.flush()
     await db.refresh(cliente)
@@ -39,6 +41,7 @@ async def actualizar_cliente(id: int, body: ClienteUpdate, db: AsyncSession = De
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
     update_data = body.model_dump(exclude_unset=True)
+    update_data.pop("prioridad", None)
     for key, value in update_data.items():
         setattr(cliente, key, value)
         

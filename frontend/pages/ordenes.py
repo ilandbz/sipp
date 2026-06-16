@@ -164,7 +164,12 @@ def _formulario_of(of_existente: dict = None):
         
         col_c4, col_c5 = st.columns(2)
         cli_sel = col_c4.selectbox("Cliente", ["Sin cliente"] + list(cli_opciones.keys()), index=idx_cli)
-        prioridad_sel = col_c5.selectbox("Prioridad *", ["1 - Alta", "2 - Media", "3 - Baja"], index=idx_prio)
+        prioridad_sel = col_c5.selectbox(
+            "Urgencia del pedido *", 
+            ["1 - Alta", "2 - Media", "3 - Baja"], 
+            index=idx_prio,
+            help="Úsalo solo para pedidos urgentes independiente del cliente. La prioridad del cliente viene de su Franquicia."
+        )
 
         with st.expander("➕ Datos adicionales"):
             col_o1, col_o2 = st.columns(2)

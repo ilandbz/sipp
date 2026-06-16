@@ -62,14 +62,12 @@ async def optimizar_semana(db, semana_id: int) -> dict:
         costo, _ = calcular_costo_cambio(ofs_base[i], ofs_base[i+1], penalizaciones)
         setup_antes += costo
 
-    # Agrupación SMED + Comercial
-    def key_grouping(of):
-        franquicia = getattr(of, "franquicia_nivel", 4)
-        formato = (of.ancho_mm or 0, of.cilindro_id or 0)
-        altura = of.alto_mm or 0
-        material = of.material_id or 0
-        color = extraer_color_primario(of.colores_detalle)
-        return (franquicia, formato, altura, material, color, of.fecha_entrega or date.max)
+    # Agrupación Comercial + Urgencia
+    key_grouping = lambda of: (
+        getattr(of, "franquicia_nivel", 4),  # 1° prioridad comercial
+        of.prioridad or 3,                   # 2° urgencia del pedido
+        of.fecha_entrega or date.max         # 3° fecha más cercana
+    )
 
     ofs_ordenadas = sorted(ofs_base, key=key_grouping)
 
