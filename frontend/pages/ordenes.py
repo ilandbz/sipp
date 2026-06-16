@@ -142,9 +142,20 @@ def _formulario_of(of_existente: dict = None):
 
     with st.form("form_of", clear_on_submit=not es_ed):
         st.subheader("🌟 Datos Obligatorios")
-        col_id1, col_id2 = st.columns(2)
-        codigo_of = col_id1.text_input("Código OF *", value=of_existente.get("codigo_of", "") if es_ed else "")
-        descripcion = col_id2.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "")
+        if es_ed:
+            st.text_input("Código OF", value=of_existente.get("codigo_of", ""), disabled=True)
+            codigo_of = of_existente.get("codigo_of", "")
+        else:
+            st.info("📋 El código OF se genera automáticamente al guardar")
+            with st.expander("🔧 Código manual (avanzado)"):
+                codigo_of_manual = st.text_input(
+                    "Código OF manual",
+                    placeholder="Dejar vacío para autogenerar (ej: 2606-0001)",
+                    help="Solo usar si necesitas un código específico del sistema anterior"
+                )
+            codigo_of = codigo_of_manual.strip()
+
+        descripcion = st.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "")
         
         col_m1, col_m2, col_m3 = st.columns(3)
         maq_sel = col_m1.selectbox("Máquina *", list(maq_opciones.keys()), index=idx_maq)
@@ -200,8 +211,8 @@ def _formulario_of(of_existente: dict = None):
         submitted = st.form_submit_button(label_btn, type="primary", use_container_width=True)
 
     if submitted:
-        if not codigo_of.strip():
-            st.error("El Código OF es obligatorio.")
+        if es_ed and not codigo_of.strip():
+            st.error("El Código OF es obligatorio en edición.")
             return
         if not descripcion.strip():
             st.error("La descripción es obligatoria.")
@@ -211,7 +222,7 @@ def _formulario_of(of_existente: dict = None):
             return
 
         payload = {
-            "codigo_of": codigo_of.strip(),
+            "codigo_of": codigo_of,
             "codigo_pt": codigo_pt.strip() or None,
             "descripcion": descripcion.strip() or None,
             "cliente_id": cli_opciones.get(cli_sel) if cli_sel != "Sin cliente" else None,
@@ -254,7 +265,8 @@ def _formulario_of(of_existente: dict = None):
         else:
             res = crear_orden(payload)
             if res:
-                st.success(f"✓ OF {codigo_of} creada | Ancho bobina: {ancho_bobina} mm")
+                codigo_generado = res.get("codigo_of", "")
+                st.success(f"✓ OF **{codigo_generado}** creada correctamente | Ancho bobina: {ancho_bobina} mm")
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("➕ Crear otra OF"):
