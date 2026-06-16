@@ -5,7 +5,7 @@ from utils.api_client import (
     get_kpi_semanal, get_cola_maquina, get_maquinas,
     ejecutar_optimizador, get_semanas, get_icc_matrix
 )
-from auth import restaurar_sesion, is_logged_in, login, logout, get_rol, can
+from auth import restaurar_sesion, is_logged_in, login, logout, get_rol, can, render_sidebar
 from pathlib import Path
 
 st.set_page_config(
