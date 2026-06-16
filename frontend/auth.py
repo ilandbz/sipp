@@ -105,20 +105,58 @@ def can(accion: str) -> bool:
     }
     return accion in permisos.get(rol, [])
 
-def render_sidebar():
-    """Llama esto en app.py y en cada página para el sidebar."""
+def render_sidebar(opciones_semanas: list = None) -> str | None:
+    """
+    Renderiza el sidebar completo y retorna la semana seleccionada.
+    opciones_semanas: lista de strings con las semanas disponibles
+    """
     from pathlib import Path
+    
     logo = Path(__file__).parent / "static" / "logo_vygpack.png"
     if logo.exists():
         st.image(str(logo), width=150)
+    
     st.markdown("### SIPP - VYGPACK")
+    
+    # Usuario y perfil
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown(f"**{st.session_state.get('nombre', 'Usuario')}**")
         st.caption(f"Rol: {get_rol()}")
     with col2:
-        if st.button("⚙️", help="Mi perfil"):
+        if st.button("⚙️", help="Mi perfil", key="btn_perfil"):
             st.switch_page("pages/perfil.py")
-    if st.button("🚪 Cerrar sesión", use_container_width=True):
+    
+    if st.button("🚪 Cerrar sesión", use_container_width=True, key="btn_logout"):
         logout()
         st.rerun()
+    
+    st.divider()
+    
+    # Selector de semana
+    semana_sel = None
+    if opciones_semanas:
+        st.markdown("**Semana**")
+        semana_sel = st.selectbox(
+            "Semana", 
+            opciones_semanas, 
+            label_visibility="collapsed",
+            key="semana_selector"
+        )
+    
+    st.divider()
+    
+    # Navegación
+    st.markdown("### 📌 Flujo de trabajo")
+    st.page_link("app.py",              label="3️⃣ Dashboard / Optimizador")
+    st.page_link("pages/ordenes.py",    label="1️⃣ Órdenes de Fabricación")
+    st.page_link("pages/semanas.py",    label="2️⃣ Semanas de Programación")
+    st.page_link("pages/reportes.py",   label="4️⃣ Reportes y Plan Semanal")
+    
+    st.divider()
+    st.markdown("### ⚙️ Configuración")
+    st.page_link("pages/clientes.py",   label="👥 Clientes")
+    st.page_link("pages/maestros.py",   label="🗂️ Maestros")
+    st.page_link("pages/perfil.py",     label="👤 Mi Perfil")
+    
+    return semana_sel
