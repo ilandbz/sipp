@@ -273,7 +273,7 @@ async def reordenar_semana(semana_id: int, body: ReordenarRequest, db: AsyncSess
             colores_detalle=estado_previo.color_principal
         )
 
-    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time()).replace(tzinfo=timezone.utc)
+    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time())
     
     ordenadas_of_ids = body.orden
     ofs_en_orden = []

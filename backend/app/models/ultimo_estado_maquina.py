@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class UltimoEstadoMaquina(SQLModel, table=True):
@@ -19,4 +19,4 @@ class UltimoEstadoMaquina(SQLModel, table=True):
     color_principal: Optional[str] = Field(default=None, max_length=80)
     tipo_bolsa_num: Optional[int] = Field(default=None)
     
-    actualizado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    actualizado_en: datetime = Field(default_factory=datetime.utcnow)

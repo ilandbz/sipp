@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class Usuario(SQLModel, table=True):
@@ -12,4 +12,4 @@ class Usuario(SQLModel, table=True):
     nombre_completo: Optional[str] = Field(default=None, max_length=150)
     rol: str = Field(max_length=30)
     activo: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

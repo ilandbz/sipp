@@ -94,7 +94,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     await db.execute(text("DELETE FROM sipp.secuencias_produccion WHERE semana_id = :semana_id"), {"semana_id": semana_id})
 
     setup_despues = 0.0
-    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time()).replace(tzinfo=timezone.utc)
+    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time())
     secuencia_resultado = []
 
     for pos, of in enumerate(ofs_ordenadas, start=1):
@@ -171,7 +171,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
         setup_total_despues_min=setup_despues,
         reduccion_pct=round(reduccion, 2),
         resultado_json={"secuencia": secuencia_resultado},
-        ejecutado_en=datetime.now(timezone.utc)
+        ejecutado_en=datetime.utcnow()
     )
     db.add(log)
 
@@ -189,7 +189,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
         estado_previo.material_id = ultima_of.material_id
         estado_previo.color_principal = extraer_color_primario(ultima_of.colores_detalle)
         estado_previo.tipo_bolsa_num = ultima_of.tipo_bolsa_id
-        estado_previo.actualizado_en = datetime.now(timezone.utc)
+        estado_previo.actualizado_en = datetime.utcnow()
 
     await db.commit()
 

@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
@@ -19,4 +19,4 @@ class LogOptimizacion(SQLModel, table=True):
     duracion_ms: Optional[int] = Field(default=None)
     resultado_json: Optional[Any] = Field(default=None, sa_column=Column(JSONB))
     ejecutado_por: Optional[str] = Field(default=None, max_length=100)
-    ejecutado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    ejecutado_en: datetime = Field(default_factory=datetime.utcnow)

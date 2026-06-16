@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class DisponibilidadMaquina(SQLModel, table=True):
@@ -13,4 +13,4 @@ class DisponibilidadMaquina(SQLModel, table=True):
     tipo: str = Field(max_length=40)
     descripcion: Optional[str] = Field(default=None)
     horas_bloqueadas: Optional[float] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class SecuenciaProduccion(SQLModel, table=True):
@@ -20,5 +20,5 @@ class SecuenciaProduccion(SQLModel, table=True):
     estado: str = Field(default="PENDIENTE", max_length=20)
     bloqueada_por: Optional[str] = Field(default=None)
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -85,7 +85,7 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_session)):
     rol = user.rol
     
     token = str(uuid.uuid4())
-    expira_en = datetime.now(timezone.utc) + timedelta(hours=8)
+    expira_en = datetime.utcnow() + timedelta(hours=8)
     
     nueva_sesion = Sesion(
         usuario_id=user_id,
@@ -125,10 +125,10 @@ async def get_me(token: str = Depends(get_token_from_header), db: AsyncSession =
         
     # 2. Verificar si expiró
     # Asegurar timezone-aware comparison
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.utcnow()
     expira_en = sesion.expira_en
     if expira_en.tzinfo is None:
-        expira_en = expira_en.replace(tzinfo=timezone.utc)
+        expira_en = expira_en
         
     if expira_en < ahora:
         # Opcional: limpiar sesión expirada
@@ -195,10 +195,10 @@ async def cambiar_password(
         )
         
     # 2. Verificar si expiró
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.utcnow()
     expira_en = sesion.expira_en
     if expira_en.tzinfo is None:
-        expira_en = expira_en.replace(tzinfo=timezone.utc)
+        expira_en = expira_en
         
     if expira_en < ahora:
         await db.delete(sesion)
@@ -272,10 +272,10 @@ async def actualizar_perfil(
         )
         
     # 2. Verificar si expiró
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.utcnow()
     expira_en = sesion.expira_en
     if expira_en.tzinfo is None:
-        expira_en = expira_en.replace(tzinfo=timezone.utc)
+        expira_en = expira_en
         
     if expira_en < ahora:
         await db.delete(sesion)

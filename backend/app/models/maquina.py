@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class Maquina(SQLModel, table=True):
@@ -13,5 +13,5 @@ class Maquina(SQLModel, table=True):
     velocidad_bpm_max: Optional[float] = Field(default=None)
     turno_horas: float = Field(default=8.0)
     dias_semana: int = Field(default=5)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

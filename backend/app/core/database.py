@@ -3,6 +3,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
+# IMPORTANTE: Usar datetime.utcnow() — las columnas son
+# TIMESTAMP WITHOUT TIME ZONE, no TIMESTAMPTZ.
+
 # Crear motor asíncrono con NullPool
 engine = create_async_engine(
     settings.DATABASE_URL,

@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
@@ -14,4 +14,4 @@ class IccCache(SQLModel, table=True):
     icc_score: float = Field(index=True)
     setup_total_min: float
     detalle_json: Optional[Any] = Field(default=None, sa_column=Column(JSONB))
-    calculado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    calculado_en: datetime = Field(default_factory=datetime.utcnow)

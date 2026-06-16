@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 
 class SetupHistorial(SQLModel, table=True):
@@ -22,4 +22,4 @@ class SetupHistorial(SQLModel, table=True):
     hubo_cambio_material: bool = Field(default=False)
     observacion: Optional[str] = Field(default=None)
     registrado_por: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

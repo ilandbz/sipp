@@ -78,8 +78,8 @@ class OrdenFabricacion(SQLModel, table=True):
     observacion: Optional[str] = Field(default=None)
 
     # Trazabilidad importación
-    importado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    importado_en: datetime = Field(default_factory=datetime.utcnow)
     fuente_archivo: Optional[str] = Field(default=None, max_length=200)
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

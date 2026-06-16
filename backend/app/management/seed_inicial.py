@@ -93,7 +93,7 @@ def parse_datetime(val):
         if pd.isna(dt):
             return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt
         return dt
     except Exception:
         return None

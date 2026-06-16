@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, DateTime, text
 
@@ -10,8 +10,8 @@ class Sesion(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     usuario_id: int = Field(foreign_key="sipp.usuarios.id")
     token: str = Field(max_length=100, unique=True, index=True)
-    expira_en: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    expira_en: datetime = Field(sa_column=Column(DateTime, nullable=False))
     created_at: datetime = Field(
-        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
-        default_factory=lambda: datetime.now(timezone.utc)
+        sa_column=Column(DateTime, nullable=False, server_default=text("now()")),
+        default_factory=datetime.utcnow
     )

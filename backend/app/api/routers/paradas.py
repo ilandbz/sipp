@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.core.database import get_session
@@ -27,8 +27,8 @@ async def registrar_parada(body: ParadaCreate, db: AsyncSession = Depends(get_se
         raise HTTPException(404, "Máquina no encontrada")
 
     # Asegurar timezone
-    inicio_tz = body.inicio if body.inicio.tzinfo else body.inicio.replace(tzinfo=timezone.utc)
-    fin_tz = body.fin if body.fin.tzinfo else body.fin.replace(tzinfo=timezone.utc)
+    inicio_tz = body.inicio if body.inicio.tzinfo else body.inicio
+    fin_tz = body.fin if body.fin.tzinfo else body.fin
 
     parada = Parada(
         maquina_id=body.maquina_id,

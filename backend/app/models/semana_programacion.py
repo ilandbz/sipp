@@ -13,5 +13,5 @@ class SemanaProgramacion(SQLModel, table=True):
     horas_disponibles: Optional[float] = Field(default=None)
     estado: str = Field(default="BORRADOR", max_length=20)
     created_by: Optional[str] = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
