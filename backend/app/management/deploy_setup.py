@@ -9,6 +9,7 @@ async def ejecutar_deploy():
     async with engine.begin() as conn:
         print("1. Verificando schema sipp...")
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sipp"))
+        await conn.execute(text("SET timezone = 'America/Lima'"))
         
         print("2. Creando/actualizando tablas...")
         # Leer y ejecutar bd.sql

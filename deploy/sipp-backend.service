@@ -6,6 +6,7 @@ After=network.target postgresql.service
 User=root
 WorkingDirectory=/var/www/html/vygpack-sipp/backend
 EnvironmentFile=/var/www/html/vygpack-sipp/.env
+Environment="TZ=America/Lima"
 ExecStart=/var/www/html/vygpack-sipp/.venv/bin/gunicorn \
     app.main:app \
     --workers 2 \

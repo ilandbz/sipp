@@ -1,3 +1,6 @@
+[global]
+developmentMode = false
+
 [server]
 disconnectedSessionTTL = 3600
 websocketPingInterval = 30
@@ -10,3 +13,11 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
+primaryColor = "#E63946"
+backgroundColor = "#1a1a2e"
+secondaryBackgroundColor = "#16213e"
+textColor = "#FAFAFA"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

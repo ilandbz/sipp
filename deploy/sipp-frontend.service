@@ -6,6 +6,7 @@ After=network.target sipp-backend.service
 User=root
 WorkingDirectory=/var/www/html/vygpack-sipp/frontend
 EnvironmentFile=/var/www/html/vygpack-sipp/.env
+Environment="TZ=America/Lima"
 ExecStart=/var/www/html/vygpack-sipp/.venv/bin/streamlit run app.py \
     --server.port 8501 \
     --server.address 0.0.0.0 \

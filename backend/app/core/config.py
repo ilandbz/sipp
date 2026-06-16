@@ -20,5 +20,6 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     BACKEND_URL: str = "http://localhost:8000"
     CSV_UPLOAD_DIR: str = "./data/uploads"
+    TIMEZONE: str = "America/Lima"
 
 settings = Settings()

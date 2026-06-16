@@ -36,6 +36,14 @@ with col1:
                 st.rerun()
             else:
                 st.error("Error al actualizar")
+                
+    st.write("---")
+    st.subheader("🎨 Apariencia")
+    tema = st.selectbox("Tema de la interfaz",
+        ["Oscuro (predeterminado)", "Claro"],
+        help="El cambio aplica al recargar la página"
+    )
+    st.info("Para cambiar el tema también puedes usar el menú ⋮ en la esquina superior derecha")
 
 with col2:
     st.subheader("🔒 Cambiar contraseña")

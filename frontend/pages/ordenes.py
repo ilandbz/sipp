@@ -70,6 +70,10 @@ with tab_lista:
                 "Estado": of["estado"]
             })
         df = pd.DataFrame(df_data)
+        if "Fecha Entrega" in df.columns and not df["Fecha Entrega"].empty:
+            df["Fecha Entrega"] = pd.to_datetime(df["Fecha Entrega"], errors='coerce').dt.strftime("%d/%m/%Y").fillna("")
+        if "Fecha Atención" in df.columns and not df["Fecha Atención"].empty:
+            df["Fecha Atención"] = pd.to_datetime(df["Fecha Atención"], errors='coerce').dt.strftime("%d/%m/%Y").fillna("")
         
         # En Streamlit moderno (v1.30+), st.dataframe soporta selección de fila
         # Para garantizar compatibilidad, mostramos un selector numérico o un selectbox de ID debajo de la tabla
@@ -139,6 +143,20 @@ def _formulario_of(of_existente: dict = None):
     val_entrega = datetime.date.today() + datetime.timedelta(days=7)
     if es_ed and of_existente.get("fecha_entrega"):
         val_entrega = datetime.datetime.strptime(of_existente["fecha_entrega"], "%Y-%m-%d").date()
+
+    if "of_resultado" in st.session_state:
+        resultado_msg = st.session_state.pop("of_resultado")
+        if resultado_msg["ok"]:
+            st.success(resultado_msg["msg"])
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("➕ Crear otra OF"):
+                    st.rerun()
+            with col2:
+                if st.button("📅 Ir a Semanas para asignarla"):
+                    st.switch_page("pages/semanas.py")
+        else:
+            st.error(resultado_msg["msg"])
 
     with st.form("form_of", clear_on_submit=not es_ed):
         st.subheader("🌟 Datos Obligatorios")
@@ -259,21 +277,31 @@ def _formulario_of(of_existente: dict = None):
         if es_ed:
             res = actualizar_orden(of_existente["id"], payload)
             if res:
-                st.success(f"Orden actualizada correctamente ✓ | Ancho bobina: {ancho_bobina} mm")
+                st.session_state["of_resultado"] = {
+                    "ok": True,
+                    "msg": f"Orden actualizada correctamente ✓ | Ancho bobina: {ancho_bobina} mm"
+                }
                 st.session_state.of_para_editar = None
-                st.rerun()
+            else:
+                st.session_state["of_resultado"] = {
+                    "ok": False,
+                    "msg": "❌ Error al actualizar la orden. Verifique los datos e intente nuevamente."
+                }
+            st.rerun()
         else:
             res = crear_orden(payload)
             if res:
                 codigo_generado = res.get("codigo_of", "")
-                st.success(f"✓ OF **{codigo_generado}** creada correctamente | Ancho bobina: {ancho_bobina} mm")
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("➕ Crear otra OF"):
-                        st.rerun()
-                with col_btn2:
-                    if st.button("📅 Ir a Semanas para asignarla"):
-                        st.switch_page("pages/semanas.py")
+                st.session_state["of_resultado"] = {
+                    "ok": True,
+                    "msg": f"✓ OF **{codigo_generado}** creada correctamente | Ancho bobina: {ancho_bobina} mm"
+                }
+            else:
+                st.session_state["of_resultado"] = {
+                    "ok": False,
+                    "msg": "❌ Error al crear la orden. Verifique los datos e intente nuevamente."
+                }
+            st.rerun()
 
 with tab_nueva:
     if es_edicion:

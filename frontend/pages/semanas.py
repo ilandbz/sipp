@@ -98,8 +98,8 @@ with col_lista:
             col1.write(semana["id"])
             maq_cod = semana["maquina_codigo"] or f"ID: {semana['maquina_id']}"
             col2.write(maq_cod)
-            col3.write(semana["fecha_inicio"])
-            col4.write(semana["fecha_fin"])
+            col3.write(datetime.datetime.strptime(semana["fecha_inicio"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_inicio") else "")
+            col4.write(datetime.datetime.strptime(semana["fecha_fin"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_fin") else "")
             col5.write(f"{semana['horas_disponibles'] or 0:.1f} h")
             
             with col6:
