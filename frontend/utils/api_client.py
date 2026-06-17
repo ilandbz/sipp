@@ -184,6 +184,24 @@ def actualizar_orden(id: int, payload: dict):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def eliminar_orden(id: int):
+    try:
+        r = requests.delete(
+            f"{BASE_URL}/api/v1/ordenes/{id}",
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code == 200:
+            return {"ok": True}
+        else:
+            try:
+                detalle = r.json().get("detail", f"Error {r.status_code}")
+            except Exception:
+                detalle = f"Error HTTP {r.status_code}"
+            return {"ok": False, "error": detalle}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def importar_csv(file):
     files = {"file": file}
     return _post("/api/v1/ordenes/importar", files=files, timeout=60)

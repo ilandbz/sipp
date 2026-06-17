@@ -3,7 +3,7 @@ import datetime
 import pandas as pd
 from utils.api_client import (
     get_maquinas, get_clientes, get_materiales, get_cilindros,
-    get_ordenes, crear_orden, actualizar_orden, get_tipos_bolsa
+    get_ordenes, crear_orden, actualizar_orden, get_tipos_bolsa, eliminar_orden
 )
 from auth import require_login, can, render_sidebar
 
@@ -61,52 +61,95 @@ with tab_lista:
     if not ordenes:
         st.info("No hay órdenes que coincidan con los filtros seleccionados.")
     else:
-        # Preparar dataframe
-        df_data = []
+        # Cabecera de la tabla
+        cols = st.columns([1, 1.5, 2, 4, 2, 2, 2, 2, 1.5, 1.5])
+        headers = ["ID","Prioridad","Código OF","Descripción",
+                   "Medida","Material","Máquina","F.Entrega","Estado","Acciones"]
+        for col, h in zip(cols, headers):
+            col.markdown(f"**{h}**")
+        st.divider()
+
+        # Filas
         for of in ordenes:
-            prioridad_map = {
-                1: "🔴 Alta",
-                2: "🟡 Media",
-                3: "🟢 Baja"
-            }
-            prio_badge = prioridad_map.get(of.get("prioridad"), "🟢 Baja")
-            df_data.append({
-                "ID": of.get("id"),
-                "Prioridad": prio_badge,
-                "Código OF": of.get("codigo_of", ""),
-                "Código PT": of.get("codigo_pt", "") or "",
-                "Descripción": of.get("descripcion", "") or "",
-                "Medida": of.get("medida_display") or of.get("medida_texto") or "",
-                "Material": of.get("material_nombre", of.get("material_id", "")),
-                "Máquina": of.get("maquina_codigo") or "Sin asignar",
-                "Fecha Atención": of.get("fecha_atencion") or "",
-                "Fecha Entrega": of.get("fecha_entrega") or "",
-                "Estado": of.get("estado", "")
-            })
-        df = pd.DataFrame(df_data)
-        if "Fecha Entrega" in df.columns and not df["Fecha Entrega"].empty:
-            df["Fecha Entrega"] = pd.to_datetime(df["Fecha Entrega"], errors='coerce').dt.strftime("%d/%m/%Y").fillna("")
-        if "Fecha Atención" in df.columns and not df["Fecha Atención"].empty:
-            df["Fecha Atención"] = pd.to_datetime(df["Fecha Atención"], errors='coerce').dt.strftime("%d/%m/%Y").fillna("")
-        
-        # En Streamlit moderno (v1.30+), st.dataframe soporta selección de fila
-        # Para garantizar compatibilidad, mostramos un selector numérico o un selectbox de ID debajo de la tabla
-        st.dataframe(df, width='stretch', hide_index=True)
-        
-        if can("editar_of"):
-            st.write("---")
-            st.subheader("Seleccionar OF para Edición")
-            selected_id = st.selectbox(
-                "Selecciona una Orden de Fabricación para editar sus detalles:",
-                options=[None] + [of.get("id") for of in ordenes],
-                format_func=lambda x: f"OF: {next((of.get('codigo_of', '') for of in ordenes if of.get('id') == x), '')} - {next(((of.get('descripcion') or '')[:50] for of in ordenes if of.get('id') == x), '')}" if x is not None else "-- Seleccionar --"
-            )
+            of_id = of.get("id")
+            estado = of.get("estado", "")
             
-            if selected_id is not None:
-                of_sel = next(of for of in ordenes if of.get("id") == selected_id)
-                st.session_state.of_para_editar = of_sel
-                st.success(f"OF {of_sel.get('codigo_of', '')} seleccionada. Dirígete a la pestaña '✏️ Editar OF' para continuar.")
-                st.button("Ir a Editar", type="primary")
+            cols = st.columns([1, 1.5, 2, 4, 2, 2, 2, 2, 1.5, 1.5])
+            cols[0].write(of_id)
+            
+            # Badge prioridad
+            p = of.get("prioridad", 3)
+            badge = "🔴" if p == 1 else "🟡" if p == 2 else "🟢"
+            cols[1].write(f"{badge} {'Alta' if p==1 else 'Media' if p==2 else 'Baja'}")
+            
+            cols[2].write(of.get("codigo_of", ""))
+            cols[3].write(of.get("descripcion", "")[:50])
+            cols[4].write(of.get("medida_display") or of.get("medida_texto") or "")
+            cols[5].write(of.get("material_nombre", ""))
+            cols[6].write(of.get("maquina_codigo") or "Sin asignar")
+            
+            fecha = of.get("fecha_entrega")
+            if fecha:
+                try:
+                    from datetime import datetime
+                    fecha_fmt = datetime.strptime(str(fecha)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+                except Exception:
+                    fecha_fmt = str(fecha)[:10]
+            else:
+                fecha_fmt = ""
+            cols[7].write(fecha_fmt)
+            
+            # Badge estado
+            estado_badge = {
+                "PENDIENTE": "⚪",
+                "EN_PROCESO": "🔵", 
+                "COMPLETADA": "🟢",
+                "CANCELADA": "⚫"
+            }
+            cols[8].write(f"{estado_badge.get(estado,'⚪')} {estado}")
+            
+            # Botones acciones
+            with cols[9]:
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    if st.button("✏️", key=f"edit_{of_id}", 
+                                help="Editar esta orden"):
+                        st.session_state["of_editar_id"] = of_id
+                        st.session_state.of_para_editar = of
+                        st.rerun()
+                with btn_col2:
+                    if estado == "PENDIENTE":
+                        if st.button("🗑️", key=f"del_{of_id}",
+                                    help="Eliminar orden"):
+                            st.session_state[f"confirmar_del_{of_id}"] = True
+                            st.rerun()
+            
+            # Confirmación eliminación
+            if st.session_state.get(f"confirmar_del_{of_id}"):
+                with st.container():
+                    st.warning(
+                        f"⚠️ ¿Eliminar **{of.get('codigo_of')}** - "
+                        f"{of.get('descripcion','')[:40]}?"
+                    )
+                    c1, c2, c3 = st.columns([2, 1, 1])
+                    with c2:
+                        if st.button("✅ Sí", key=f"si_{of_id}",
+                                    type="primary"):
+                            resultado = eliminar_orden(of_id)
+                            if resultado and resultado.get("ok"):
+                                st.success(f"✓ OF eliminada")
+                                st.session_state.pop(f"confirmar_del_{of_id}", None)
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                error = resultado.get("error","Error") if resultado else "Error"
+                                st.error(f"❌ {error}")
+                    with c3:
+                        if st.button("❌ No", key=f"no_{of_id}"):
+                            st.session_state.pop(f"confirmar_del_{of_id}", None)
+                            st.rerun()
+            
+            st.divider()
 
 def _formulario_of(of_existente: dict = None):
     es_ed = of_existente is not None

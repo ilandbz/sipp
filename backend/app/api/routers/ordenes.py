@@ -284,14 +284,54 @@ async def actualizar_orden(
         await db.rollback()
         raise HTTPException(500, f"Error interno: {str(e)}")
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def eliminar_orden(id: int, db: AsyncSession = Depends(get_session)):
-    of = await db.get(OrdenFabricacion, id)
-    if not of:
-        raise HTTPException(status_code=404, detail="Orden de fabricación no encontrada")
-    await db.delete(of)
-    await db.commit()
-    return None
+@router.delete("/{id}")
+async def eliminar_orden(
+    id: int,
+    db: AsyncSession = Depends(get_session)
+):
+    try:
+        from sqlalchemy import text
+        
+        # Verificar que existe y obtener estado
+        result = await db.execute(
+            text("SELECT id, codigo_of, estado FROM sipp.ordenes_fabricacion WHERE id = :id"),
+            {"id": id}
+        )
+        of = result.mappings().one_or_none()
+        
+        if not of:
+            raise HTTPException(404, "Orden no encontrada")
+        
+        if of["estado"] != "PENDIENTE":
+            raise HTTPException(400, 
+                f"Solo se pueden eliminar órdenes PENDIENTE. "
+                f"Esta orden está en estado: {of['estado']}")
+        
+        # Verificar que no está en una semana
+        result2 = await db.execute(
+            text("""SELECT COUNT(*) as total 
+                    FROM sipp.secuencias_produccion 
+                    WHERE orden_fabricacion_id = :id"""),
+            {"id": id}
+        )
+        count = result2.scalar()
+        if count > 0:
+            raise HTTPException(400,
+                "La orden está asignada a una semana de producción. "
+                "Retírala desde Semanas antes de eliminar.")
+        
+        await db.execute(
+            text("DELETE FROM sipp.ordenes_fabricacion WHERE id = :id"),
+            {"id": id}
+        )
+        await db.commit()
+        return {"mensaje": f"Orden {of['codigo_of']} eliminada correctamente"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Error interno: {str(e)}")
 
 @router.post("/{id}/sugerir-maquina", status_code=status.HTTP_200_OK)
 async def post_sugerir_maquina(id: int, db: AsyncSession = Depends(get_session)):
