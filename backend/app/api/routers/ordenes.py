@@ -56,7 +56,7 @@ async def listar_ordenes(
                 of.prioridad, of.franquicia_nivel,
                 of.horas_produccion, of.observacion,
                 of.tipo_produccion, of.created_at, of.updated_at,
-                m.codigo as maquina_codigo,
+                COALESCE(m.codigo, 'Sin asignar') as maquina_codigo,
                 mat.tipo as material_nombre,
                 c.razon_social as cliente_nombre
             FROM sipp.ordenes_fabricacion of
@@ -205,27 +205,73 @@ async def crear_orden(
             detail=f"Error interno: {str(e)}"
         )
 
-@router.patch("/{id}", response_model=OrdenFabricacionRead)
-async def actualizar_orden(id: int, body: OrdenFabricacionUpdate, db: AsyncSession = Depends(get_session)):
-    of = await db.get(OrdenFabricacion, id)
-    if not of:
-        raise HTTPException(status_code=404, detail="Orden de fabricación no encontrada")
+@router.patch("/{id}", response_model=dict)
+async def actualizar_orden(
+    id: int,
+    body: OrdenFabricacionUpdate,
+    db: AsyncSession = Depends(get_session)
+):
+    try:
+        from sqlalchemy import text
+        from datetime import datetime
         
-    update_data = body.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(of, key, value)
+        datos = body.model_dump(exclude_unset=True, exclude_none=False)
         
-    # Auto-calcular ancho bobina tras actualizacion
-    calc = calcular_ancho_bobina(of)
-    if calc > 0:
-        of.ancho_bobina_mm = calc
+        if not datos:
+            raise HTTPException(400, "No hay datos para actualizar")
         
-    db.add(of)
-    await db.flush()
-    await db.commit()
-    
-    # Reload with joined details
-    return await obtener_orden(of.id, db)
+        # Agregar updated_at
+        datos["updated_at"] = datetime.utcnow()
+        
+        # Calcular ancho de bobina si cambiaron las medidas
+        ancho = datos.get("ancho_mm")
+        fuelle = datos.get("fuelle_mm")
+        if ancho and fuelle:
+            pega = datos.get("pega_cm", 2.5) or 2.5
+            datos["ancho_bobina_mm"] = (ancho + fuelle) * 2 + (pega * 10)
+        
+        # Construir SET dinámico
+        campos_validos = [
+            "descripcion", "referencia", "cliente_id",
+            "maquina_asignada_id", "material_id", "cilindro_id",
+            "tipo_bolsa_id", "medida_texto", "ancho_mm", "alto_mm",
+            "fuelle_mm", "ancho_bobina_mm", "gramaje", "num_colores",
+            "colores_detalle", "cantidad_programada", "unidad_medida",
+            "fecha_entrega", "fecha_atencion", "prioridad",
+            "franquicia_nivel", "observacion", "estado", "updated_at"
+        ]
+        
+        set_parts = []
+        params = {"id": id}
+        for campo in campos_validos:
+            if campo in datos:
+                set_parts.append(f"{campo} = :{campo}")
+                params[campo] = datos[campo]
+        
+        if not set_parts:
+            raise HTTPException(400, "No hay campos válidos para actualizar")
+        
+        sql = text(f"""
+            UPDATE sipp.ordenes_fabricacion
+            SET {', '.join(set_parts)}
+            WHERE id = :id
+            RETURNING id, codigo_of, estado
+        """)
+        
+        result = await db.execute(sql, params)
+        row = result.mappings().one_or_none()
+        
+        if not row:
+            raise HTTPException(404, "Orden no encontrada")
+        
+        await db.commit()
+        return {"ok": True, "id": row["id"], "codigo_of": row["codigo_of"]}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Error interno: {str(e)}")
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def eliminar_orden(id: int, db: AsyncSession = Depends(get_session)):

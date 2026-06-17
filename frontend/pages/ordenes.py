@@ -64,7 +64,7 @@ with tab_lista:
                 "Descripción": of.get("descripcion", "") or "",
                 "Medida": of.get("medida_texto", "") or "",
                 "Material": of.get("material_nombre", of.get("material_id", "")),
-                "Máquina": of.get("maquina_codigo", of.get("maquina_asignada_id", "")),
+                "Máquina": of.get("maquina_codigo") or "Sin asignar",
                 "Fecha Atención": of.get("fecha_atencion") or "",
                 "Fecha Entrega": of.get("fecha_entrega") or "",
                 "Estado": of.get("estado", "")
@@ -175,6 +175,14 @@ def _formulario_of(of_existente: dict = None):
 
         descripcion = st.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "")
         
+        # Campo medida texto (referencia rápida)
+        medida_texto = st.text_input(
+            "Medida (referencia)",
+            value=of_existente.get("medida_texto", "") if es_ed else "",
+            placeholder="Ej: 18X32X10.5 — se actualiza al guardar si ingresas Ancho/Alto/Fuelle",
+            help="Si ingresas Ancho, Alto y Fuelle, la medida se calcula automáticamente"
+        )
+        
         col_m1, col_m2, col_m3 = st.columns(3)
         maq_sel = col_m1.selectbox("Máquina *", list(maq_opciones.keys()), index=idx_maq)
         mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat)
@@ -265,6 +273,16 @@ def _formulario_of(of_existente: dict = None):
             "tipo_bolsa_id": int(bolsa_opciones[bolsa_sel]) if bolsa_sel != "(ninguno)" else None,
         }
 
+        # Si el usuario llenó ancho/alto/fuelle, generar medida_texto automático
+        if ancho > 0 and alto > 0:
+            if fuelle > 0:
+                medida_calculada = f"{ancho}X{alto}X{fuelle}"
+            else:
+                medida_calculada = f"{ancho}X{alto}"
+            payload["medida_texto"] = medida_calculada
+        elif medida_texto.strip():
+            payload["medida_texto"] = medida_texto.strip()
+
         # Remove None values
         payload = {k: v for k, v in payload.items() if v is not None}
         payload["fecha_entrega"] = str(fecha_entrega)
@@ -275,19 +293,18 @@ def _formulario_of(of_existente: dict = None):
             ancho_bobina = (ancho + fuelle) * 2 + 25
 
         if es_ed:
-            res = actualizar_orden(of_existente["id"], payload)
-            if res:
+            resultado = actualizar_orden(of_existente["id"], payload)
+            if resultado and resultado.get("ok"):
                 st.session_state["of_resultado"] = {
                     "ok": True,
-                    "msg": f"Orden actualizada correctamente ✓ | Ancho bobina: {ancho_bobina} mm"
+                    "msg": f"✓ OF actualizada correctamente"
                 }
+                st.session_state.pop("of_editar_id", None)
                 st.session_state.of_para_editar = None
+                st.rerun()
             else:
-                st.session_state["of_resultado"] = {
-                    "ok": False,
-                    "msg": "❌ Error al actualizar la orden. Verifique los datos e intente nuevamente."
-                }
-            st.rerun()
+                error = resultado.get("error", "Error desconocido") if resultado else "Sin respuesta"
+                st.error(f"❌ Error al actualizar: {error}")
         else:
             st.write("Payload enviado:", payload)
             res = crear_orden(payload)

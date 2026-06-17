@@ -166,7 +166,23 @@ def crear_orden(payload: dict):
         return {"ok": False, "error": str(e)}
 
 def actualizar_orden(id: int, payload: dict):
-    return _patch(f"/api/v1/ordenes/{id}", payload)
+    try:
+        r = requests.patch(
+            f"{BASE_URL}/api/v1/ordenes/{id}",
+            json=payload,
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code in [200, 201]:
+            return {"ok": True, "data": r.json()}
+        else:
+            try:
+                detalle = r.json().get("detail", f"Error {r.status_code}")
+            except Exception:
+                detalle = f"Error HTTP {r.status_code}"
+            return {"ok": False, "error": detalle}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 def importar_csv(file):
     files = {"file": file}
