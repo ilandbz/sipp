@@ -1,5 +1,5 @@
 import streamlit as st
-import datetime
+from datetime import date, datetime, timedelta
 import pandas as pd
 from utils.api_client import (
     get_maquinas, get_clientes, get_materiales, get_cilindros,
@@ -54,13 +54,47 @@ with tab_lista:
         if st.button("🔄", help="Actualizar lista", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        st.caption(f"Última actualización: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"Última actualización: {datetime.now().strftime('%H:%M:%S')}")
     
     ordenes = cargar_ordenes(filtro_maq, filtro_estado, filtro_buscar) or []
     
     if not ordenes:
         st.info("No hay órdenes que coincidan con los filtros seleccionados.")
     else:
+        # Configuración de paginación
+        ITEMS_POR_PAGINA = 20
+
+        # Estado de página actual
+        if "pagina_ordenes" not in st.session_state:
+            st.session_state["pagina_ordenes"] = 1
+
+        # IMPORTANTE: Resetear a página 1 cuando cambian los filtros
+        filtros_actuales = f"{filtro_maq}_{filtro_estado}_{filtro_buscar}"
+        if st.session_state.get("filtros_prev") != filtros_actuales:
+            st.session_state["pagina_ordenes"] = 1
+            st.session_state["filtros_prev"] = filtros_actuales
+
+        # Aplicar paginación a la lista
+        total_items = len(ordenes)
+        total_paginas = max(1, (total_items + ITEMS_POR_PAGINA - 1) // ITEMS_POR_PAGINA)
+
+        # Asegurar página válida
+        pagina_actual = st.session_state["pagina_ordenes"]
+        if pagina_actual > total_paginas:
+            pagina_actual = 1
+            st.session_state["pagina_ordenes"] = 1
+
+        inicio = (pagina_actual - 1) * ITEMS_POR_PAGINA
+        fin = inicio + ITEMS_POR_PAGINA
+        ordenes_pagina = ordenes[inicio:fin]
+
+        # Mostrar info de paginación
+        st.caption(
+            f"Mostrando {inicio+1}–{min(fin, total_items)} "
+            f"de {total_items} órdenes | "
+            f"Página {pagina_actual} de {total_paginas}"
+        )
+
         # Cabecera de la tabla
         cols = st.columns([1, 1.5, 2, 4, 2, 2, 2, 2, 1.5, 1.5])
         headers = ["ID","Prioridad","Código OF","Descripción",
@@ -70,7 +104,7 @@ with tab_lista:
         st.divider()
 
         # Filas
-        for of in ordenes:
+        for of in ordenes_pagina:
             of_id = of.get("id")
             estado = of.get("estado", "")
             
@@ -151,6 +185,38 @@ with tab_lista:
             
             st.divider()
 
+        # Controles de navegación al final
+        st.divider()
+        col_prev, col_info, col_next = st.columns([1, 3, 1])
+
+        with col_prev:
+            if st.button("◀ Anterior", 
+                         disabled=(pagina_actual <= 1),
+                         use_container_width=True):
+                st.session_state["pagina_ordenes"] -= 1
+                st.rerun()
+
+        with col_info:
+            # Selector de página directa
+            nueva_pag = st.number_input(
+                "Ir a página",
+                min_value=1,
+                max_value=total_paginas,
+                value=pagina_actual,
+                step=1,
+                label_visibility="collapsed"
+            )
+            if nueva_pag != pagina_actual:
+                st.session_state["pagina_ordenes"] = int(nueva_pag)
+                st.rerun()
+
+        with col_next:
+            if st.button("Siguiente ▶",
+                         disabled=(pagina_actual >= total_paginas),
+                         use_container_width=True):
+                st.session_state["pagina_ordenes"] += 1
+                st.rerun()
+
 def _formulario_of(of_existente: dict = None):
     es_ed = of_existente is not None
     
@@ -197,9 +263,9 @@ def _formulario_of(of_existente: dict = None):
         if prio_val in [1, 2, 3]:
             idx_prio = prio_val - 1
 
-    val_entrega = datetime.date.today() + datetime.timedelta(days=7)
+    val_entrega = date.today() + timedelta(days=7)
     if es_ed and of_existente.get("fecha_entrega"):
-        val_entrega = datetime.datetime.strptime(of_existente["fecha_entrega"], "%Y-%m-%d").date()
+        val_entrega = datetime.strptime(of_existente["fecha_entrega"], "%Y-%m-%d").date()
 
     if "of_resultado" in st.session_state:
         resultado_msg = st.session_state.pop("of_resultado")

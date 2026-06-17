@@ -76,7 +76,7 @@ async def listar_ordenes(
             LEFT JOIN sipp.clientes c ON c.id = of.cliente_id
             WHERE {where}
             ORDER BY of.created_at DESC
-            LIMIT 200
+            LIMIT 500
         """)
         
         result = await db.execute(sql, params)
