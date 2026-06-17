@@ -30,19 +30,33 @@ if "of_para_editar" not in st.session_state:
 
 # Determinar nombre del tab dinámicamente
 es_edicion = st.session_state.of_para_editar is not None
-tab_nueva_nombre = "✏️ Editar OF" if es_edicion else "➕ Nueva OF"
 
-tab_lista, tab_nueva = st.tabs(["Lista de OFs", tab_nueva_nombre])
+@st.cache_data(ttl=10)  # Solo 10 segundos de cache
+def cargar_ordenes(maquina, estado, buscar):
+    return get_ordenes(maquina=maquina, estado=estado, buscar=buscar)
+
+tab_lista, tab_nueva, tab_editar = st.tabs([
+    "📋 Lista de OFs",
+    "➕ Nueva OF", 
+    "✏️ Editar OF"
+])
 
 with tab_lista:
     st.subheader("Filtrar y Buscar Órdenes")
-    col_f1, col_f2, col_f3 = st.columns(3)
+    col_filtros, col_refresh = st.columns([10, 1])
+    with col_filtros:
+        col_f1, col_f2, col_f3 = st.columns(3)
+        filtro_maq = col_f1.selectbox("Máquina", ["Todas"] + [m["codigo"] for m in maquinas])
+        filtro_estado = col_f2.selectbox("Estado", ["Todos", "PENDIENTE", "PROGRAMADA", "EN_PROCESO", "COMPLETADA", "CANCELADA"])
+        filtro_buscar = col_f3.text_input("Buscar OF, descripción o código PT")
     
-    filtro_maq = col_f1.selectbox("Máquina", ["Todas"] + [m["codigo"] for m in maquinas])
-    filtro_estado = col_f2.selectbox("Estado", ["Todos", "PENDIENTE", "PROGRAMADA", "EN_PROCESO", "COMPLETADA", "CANCELADA"])
-    filtro_buscar = col_f3.text_input("Buscar OF, descripción o código PT")
+    with col_refresh:
+        if st.button("🔄", help="Actualizar lista", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        st.caption(f"Última actualización: {datetime.datetime.now().strftime('%H:%M:%S')}")
     
-    ordenes = get_ordenes(maquina=filtro_maq, estado=filtro_estado, buscar=filtro_buscar) or []
+    ordenes = cargar_ordenes(filtro_maq, filtro_estado, filtro_buscar) or []
     
     if not ordenes:
         st.info("No hay órdenes que coincidan con los filtros seleccionados.")
@@ -62,7 +76,7 @@ with tab_lista:
                 "Código OF": of.get("codigo_of", ""),
                 "Código PT": of.get("codigo_pt", "") or "",
                 "Descripción": of.get("descripcion", "") or "",
-                "Medida": of.get("medida_texto", "") or "",
+                "Medida": of.get("medida_display") or of.get("medida_texto") or "",
                 "Material": of.get("material_nombre", of.get("material_id", "")),
                 "Máquina": of.get("maquina_codigo") or "Sin asignar",
                 "Fecha Atención": of.get("fecha_atencion") or "",
@@ -91,7 +105,7 @@ with tab_lista:
             if selected_id is not None:
                 of_sel = next(of for of in ordenes if of.get("id") == selected_id)
                 st.session_state.of_para_editar = of_sel
-                st.success(f"OF {of_sel.get('codigo_of', '')} seleccionada. Dirígete a la pestaña '{tab_nueva_nombre}' para continuar.")
+                st.success(f"OF {of_sel.get('codigo_of', '')} seleccionada. Dirígete a la pestaña '✏️ Editar OF' para continuar.")
                 st.button("Ir a Editar", type="primary")
 
 def _formulario_of(of_existente: dict = None):
@@ -295,6 +309,7 @@ def _formulario_of(of_existente: dict = None):
         if es_ed:
             resultado = actualizar_orden(of_existente["id"], payload)
             if resultado and resultado.get("ok"):
+                st.cache_data.clear()  # Limpiar cache para forzar recarga
                 st.session_state["of_resultado"] = {
                     "ok": True,
                     "msg": f"✓ OF actualizada correctamente"
@@ -309,6 +324,7 @@ def _formulario_of(of_existente: dict = None):
             st.write("Payload enviado:", payload)
             res = crear_orden(payload)
             if res and res.get("ok"):
+                st.cache_data.clear()  # Limpiar cache para forzar recarga
                 codigo_generado = res["data"].get("codigo_of", "")
                 st.session_state["of_resultado"] = {
                     "ok": True,
@@ -323,18 +339,21 @@ def _formulario_of(of_existente: dict = None):
             st.rerun()
 
 with tab_nueva:
-    if es_edicion:
+    if can("crear_of"):
+        st.subheader("Crear una Nueva Orden de Fabricación")
+        _formulario_of()
+    else:
+        st.info("No tienes permisos para crear órdenes.")
+
+with tab_editar:
+    if st.session_state.of_para_editar:
+        st.info("Editando Orden de Fabricación seleccionada.")
         if can("editar_of"):
-            st.info("Modo Edición Activado")
-            if st.button("❌ Cancelar Edición y volver a Crear"):
+            if st.button("❌ Cancelar Edición"):
                 st.session_state.of_para_editar = None
                 st.rerun()
             _formulario_of(st.session_state.of_para_editar)
         else:
             st.error("No tienes permisos para editar órdenes.")
     else:
-        if can("crear_of"):
-            st.subheader("Crear una Nueva Orden de Fabricación")
-            _formulario_of()
-        else:
-            st.info("No tienes permisos para crear órdenes.")
+        st.info("ℹ️ Para editar una Orden de Fabricación, selecciónala en la pestaña '📋 Lista de OFs'.")

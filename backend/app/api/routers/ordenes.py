@@ -48,6 +48,17 @@ async def listar_ordenes(
                 of.referencia, of.estado, of.maquina_asignada_id,
                 of.material_id, of.cliente_id, of.cilindro_id,
                 of.tipo_bolsa_id, of.medida_texto,
+                COALESCE(
+                    of.medida_texto,
+                    CASE 
+                        WHEN of.ancho_mm IS NOT NULL AND of.alto_mm IS NOT NULL
+                        THEN CONCAT(of.ancho_mm::text, 'X', of.alto_mm::text,
+                             CASE WHEN of.fuelle_mm IS NOT NULL 
+                                  THEN CONCAT('X', of.fuelle_mm::text) 
+                                  ELSE '' END)
+                        ELSE NULL
+                    END
+                ) as medida_display,
                 of.ancho_mm, of.alto_mm, of.fuelle_mm,
                 of.ancho_bobina_mm, of.gramaje, of.num_colores,
                 of.colores_detalle, of.cantidad_pedido,
