@@ -33,6 +33,7 @@ with col1:
                 st.session_state["usuario"]["nombre_completo"] = nuevo_nombre
                 st.session_state["nombre"] = nuevo_nombre
                 st.success("✓ Nombre actualizado")
+                st.cache_data.clear()
                 st.rerun()
             else:
                 st.error("Error al actualizar")
@@ -71,5 +72,7 @@ with col2:
                 })
                 if resultado:
                     st.success("✓ Contraseña actualizada correctamente")
+                    st.cache_data.clear()
+                    st.rerun()
                 else:
                     st.error("Contraseña actual incorrecta o error del servidor")

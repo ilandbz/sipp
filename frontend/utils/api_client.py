@@ -65,7 +65,7 @@ def _put(ruta: str, payload: dict):
         return None
 
 # ── Máquinas ──────────────────────────────────────────
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def get_maquinas():
     return _get("/api/v1/maquinas/")
 
@@ -73,7 +73,7 @@ def actualizar_maquina(id: int, payload: dict):
     return _patch(f"/api/v1/maquinas/{id}", payload)
 
 # ── Materiales ────────────────────────────────────────
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def get_materiales():
     return _get("/api/v1/materiales/")
 
@@ -101,7 +101,7 @@ def eliminar_cilindro(id: int):
     return _delete(f"/api/v1/cilindros/{id}")
 
 # ── Tipos de Bolsa ────────────────────────────────────
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def get_tipos_bolsa():
     return _get("/api/v1/tipos-bolsa/")
 
@@ -109,7 +109,7 @@ def actualizar_tipo_bolsa(id: int, payload: dict):
     return _patch(f"/api/v1/tipos-bolsa/{id}", payload)
 
 # ── Franquicias ───────────────────────────────────────
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def get_franquicias():
     return _get("/api/v1/franquicias/")
 
@@ -154,7 +154,6 @@ def eliminar_cliente(id: int):
         return {"ok": False, "error": str(e)}
 
 # ── Órdenes de Fabricación ────────────────────────────
-@st.cache_data(ttl=30)
 def get_ordenes(maquina=None, estado=None, buscar=None):
     params = {}
     if maquina and maquina != "Todas": params["maquina"] = maquina
@@ -229,7 +228,6 @@ def importar_csv(file):
     return _post("/api/v1/ordenes/importar", files=files, timeout=60)
 
 # ── Semanas ───────────────────────────────────────────
-@st.cache_data(ttl=30)
 def get_semanas():
     return _get("/api/v1/semanas/")
 
@@ -245,7 +243,6 @@ def agregar_of_a_semana(semana_id: int, of_id: int):
 def reordenar_semana(semana_id: int, orden: list[int]):
     return _put(f"/api/v1/semanas/{semana_id}/reordenar", {"orden": orden})
 
-@st.cache_data(ttl=30)
 def get_ofs_disponibles(semana_id: int):
     return _get(f"/api/v1/semanas/{semana_id}/ofs-disponibles")
 
@@ -282,22 +279,18 @@ def calcular_tiempos(of_ids: list[int]):
     return _post("/api/v1/optimizador/calcular-tiempos", {"of_ids": of_ids})
 
 # ── KPIs ──────────────────────────────────────────────
-@st.cache_data(ttl=30)
 def get_kpi_semanal(semana: str = None):
     params = {"semana": semana} if semana else None
     return _get("/api/v1/kpi/semanal", params)
 
-@st.cache_data(ttl=30)
 def get_cola_maquina(maquina_id: int, semana: str = None):
     params = {"semana": semana} if semana else None
     return _get(f"/api/v1/maquinas/{maquina_id}/cola", params)
 
-@st.cache_data(ttl=30)
 def get_icc_matrix(semana: str = None):
     params = {"semana": semana} if semana else None
     return _get("/api/v1/kpi/icc_matrix", params)
 
-@st.cache_data(ttl=30)
 def get_plan_semanal(semana: str = None):
     params = {"semana": semana} if semana else None
     return _get("/api/v1/kpi/plan-semanal", params)

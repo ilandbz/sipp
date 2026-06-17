@@ -68,9 +68,17 @@ with tab_lista:
                         st.session_state.cliente_editando = cli
                         st.rerun()
                     if btn2.button("🗑️", key=f"del_{cli['id']}", help="Eliminar cliente"):
-                        if eliminar_cliente(cli["id"]):
+                        res_del = eliminar_cliente(cli["id"])
+                        if isinstance(res_del, dict) and res_del.get("ok"):
                             st.success("Cliente eliminado exitosamente.")
+                            st.cache_data.clear()
                             st.rerun()
+                        elif isinstance(res_del, bool) and res_del:
+                            st.success("Cliente eliminado exitosamente.")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Error al eliminar: {res_del.get('error') if isinstance(res_del, dict) else 'Desconocido'}")
     else:
         st.info("No hay clientes registrados en el sistema.")
 
@@ -132,11 +140,13 @@ with tab_nuevo:
                     if actualizar_cliente(cli_data["id"], payload):
                         st.success("Cliente actualizado exitosamente.")
                         st.session_state.cliente_editando = None
+                        st.cache_data.clear()
                         st.rerun()
                 else:
                     if crear_cliente(payload):
                         st.success(f"Cliente '{razon_social}' creado exitosamente.")
                         st.session_state.cliente_editando = None
+                        st.cache_data.clear()
                         st.rerun()
 
 with tab_franq:

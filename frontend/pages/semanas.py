@@ -60,17 +60,23 @@ with col_crear:
                             "maquina_id": maq_opciones[maq_sel],
                             "fecha_inicio": str(fecha_inicio),
                             "fecha_fin": str(fecha_fin),
-                            "estado": "BORRADOR"
                         }
                         res = crear_semana(payload)
                         if res:
+                            st.cache_data.clear()
                             st.session_state["semana_creada_msg"] = f"Semana creada: {dias_habiles} días hábiles = {horas_disp_calc:.1f} horas disponibles"
                             st.rerun()
     else:
         st.info("No tienes permisos para crear nuevas semanas.")
 
 with col_lista:
-    st.subheader("Lista de Semanas Registradas")
+    col_titulo, col_refresh = st.columns([10, 1])
+    with col_titulo:
+        st.subheader("Lista de Semanas Registradas")
+    with col_refresh:
+        if st.button("🔄", help="Actualizar lista", key="refresh_semanas"):
+            st.cache_data.clear()
+            st.rerun()
     
     if not semanas:
         st.info("No hay semanas de programación registradas.")
@@ -123,6 +129,7 @@ with col_lista:
                         if resultado:
                             st.success("Semana eliminada")
                             st.session_state.pop(f"confirmar_del_{semana['id']}", None)
+                            st.cache_data.clear()
                             st.rerun()
                         else:
                             st.error("Error al eliminar")
@@ -156,6 +163,7 @@ with col_lista:
                     res_est = actualizar_estado_semana(selected_semana_id, nuevo_estado)
                     if res_est:
                         st.success(f"Estado actualizado a {nuevo_estado} ✓")
+                        st.cache_data.clear()
                         st.rerun()
             else:
                 st.info(f"Estado actual de la semana: **{semana_sel['estado']}** (Solo lectura)")
@@ -234,6 +242,7 @@ with col_lista:
                             if res:
                                 st.success("Orden actualizado y setups recalculados.")
                                 del st.session_state["orden_temporal"]
+                                st.cache_data.clear()
                                 st.rerun()
                 else:
                     st.info("🔒 No tienes permisos para reordenar secuencias.")
@@ -271,6 +280,7 @@ with col_lista:
                                 res_par = registrar_parada(payload_parada)
                                 if res_par:
                                     st.success(f"Parada registrada. {res_par.get('secuencias_afectadas', 0)} secuencias reprogramadas.")
+                                    st.cache_data.clear()
                                     st.rerun()
             
             # Listado de OFs disponibles para agregar
@@ -325,6 +335,7 @@ with col_lista:
                                 res_add = agregar_of_a_semana(selected_semana_id, of["id"])
                                 if res_add:
                                     st.success(f"OF {of['codigo_of']} agregada ✓")
+                                    st.cache_data.clear()
                                     st.rerun()
             else:
                 st.write("---")

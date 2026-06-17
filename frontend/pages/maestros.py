@@ -45,6 +45,7 @@ with tab_maq:
                     }
                     if actualizar_maquina(m["id"], payload):
                         st.success("Máquina actualizada ✓")
+                        st.cache_data.clear()
                         st.rerun()
     else:
         st.warning("No hay máquinas registradas.")
@@ -81,6 +82,7 @@ with tab_mat:
                 if b2.button("🗑️", key=f"del_mat_{mat['id']}"):
                     if eliminar_material(mat["id"]):
                         st.success("Material eliminado ✓")
+                        st.cache_data.clear()
                         st.rerun()
     else:
         st.info("No hay materiales registrados.")
@@ -121,10 +123,12 @@ with tab_mat:
                     if actualizar_material(mat_data["id"], payload):
                         st.success("Actualizado ✓")
                         st.session_state.mat_editando = None
+                        st.cache_data.clear()
                         st.rerun()
                 else:
                     if crear_material(payload):
                         st.success("Creado ✓")
+                        st.cache_data.clear()
                         st.rerun()
 
 # --- CILINDROS ---
@@ -185,10 +189,12 @@ with tab_cil:
                     if actualizar_cilindro(cil_data["id"], payload):
                         st.success("Actualizado ✓")
                         st.session_state.cil_editando = None
+                        st.cache_data.clear()
                         st.rerun()
                 else:
                     if crear_cilindro(payload):
                         st.success("Creado ✓")
+                        st.cache_data.clear()
                         st.rerun()
 
 # --- TIPOS DE BOLSA ---
@@ -213,6 +219,7 @@ with tab_bolsa:
                     }
                     if actualizar_tipo_bolsa(b["id"], payload):
                         st.success("Actualizado ✓")
+                        st.cache_data.clear()
                         st.rerun()
     else:
         st.warning("No hay Tipos de Bolsa registrados.")
