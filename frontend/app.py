@@ -50,16 +50,34 @@ if not is_logged_in():
     st.stop()
 
 def opciones_semanas():
-    today = datetime.date.today()
-    weeks = []
-    for i in range(-5, 10):
-        d = today + datetime.timedelta(weeks=i)
-        year, week_num, _ = d.isocalendar()
-        weeks.append(f"{year}-W{week_num:02d}")
-    return sorted(list(set(weeks)))
+    semanas = get_semanas() or []
+    if not semanas:
+        return ["Sin semanas registradas"]
+    
+    opciones = {}
+    for s in semanas:
+        # Formato legible: "M8 — 16/06 al 20/06/2026 (BORRADOR)"
+        maquina = s.get("maquina_codigo", s.get("maquina", ""))
+        inicio = s.get("fecha_inicio", "")
+        fin = s.get("fecha_fin", "")
+        estado = s.get("estado", "")
+        horas = s.get("horas_disponibles", 0)
+        
+        # Formatear fechas a DD/MM/YYYY
+        try:
+            from datetime import datetime
+            fi = datetime.strptime(str(inicio)[:10], "%Y-%m-%d").strftime("%d/%m")
+            ff = datetime.strptime(str(fin)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            label = f"{maquina} — {fi} al {ff} ({estado})"
+        except Exception:
+            label = f"Semana ID {s.get('id')} - {maquina}"
+        
+        opciones[label] = s.get("id")
+    
+    return opciones
 
-def render_matriz_icc(semana: str):
-    datos = get_icc_matrix(semana)
+def render_matriz_icc(semana: str = None, semana_id: int = None):
+    datos = get_icc_matrix(semana=semana, semana_id=semana_id)
     if not datos or "matrix" not in datos or not datos["matrix"]:
         st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
         return
@@ -84,7 +102,8 @@ def render_matriz_icc(semana: str):
     st.dataframe(styled, width='stretch')
 
 # ── Sidebar ──────────────────────────────────────────────
-semana_sel = render_sidebar(opciones_semanas())
+semanas_opciones = opciones_semanas()
+semana_sel = render_sidebar(semanas_opciones)
 
 # Verificar disponibilidad del backend (usando el endpoint de maquinas que ya funciona)
 maquinas = get_maquinas()
@@ -93,11 +112,32 @@ if maquinas is None:
     st.stop()
 
 # Cargar KPIs (si el endpoint no existe o retorna 404/None, se usa una lista vacía)
-kpis_raw = get_kpi_semanal(semana_sel)
-kpis = kpis_raw if kpis_raw is not None else []
+if semana_sel:
+    kpis_raw = get_kpi_semanal(semana_id=semana_sel)
+    kpis = kpis_raw if kpis_raw is not None else []
+else:
+    kpis = []
 
 # ── KPIs (fila superior) ──────────────────────────────────
-st.subheader(f"Semana en curso: {semana_sel}")
+if isinstance(semanas_opciones, list):
+    st.info("""
+    📅 No hay semanas de programación registradas aún.
+    
+    **Para comenzar:**
+    1. Ve a **Órdenes de Fabricación** y registra los pedidos
+    2. Ve a **Semanas de Programación** y crea una semana
+    3. Agrega las órdenes a la semana
+    4. Regresa aquí y ejecuta el **Optimizador**
+    """)
+elif not semana_sel:
+    st.warning("Selecciona una semana en el menú de la izquierda")
+else:
+    semana_label = ""
+    for label, id_ in semanas_opciones.items():
+        if id_ == semana_sel:
+            semana_label = label
+            break
+    st.subheader(f"Semana en curso: {semana_label}")
 
 if get_rol() in ["PROGRAMADOR", "JEFE_PRODUCCION"]:
     st.info(
@@ -139,7 +179,10 @@ with col_cola:
                 if not maq:
                     st.warning(f"Máquina {maq_code} no disponible.")
                     continue
-                cola = get_cola_maquina(maq["id"], semana_sel)
+                if semana_sel:
+                    cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
+                else:
+                    cola = []
                 if not cola:
                     st.info("Sin órdenes programadas para esta semana.")
                     continue
@@ -179,7 +222,8 @@ with col_cola:
 
 with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")
-    render_matriz_icc(semana_sel)
+    if semana_sel:
+        render_matriz_icc(semana_id=semana_sel)
     
     st.divider()
     if can("optimizar"):

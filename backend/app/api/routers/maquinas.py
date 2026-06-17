@@ -59,7 +59,7 @@ async def actualizar_maquina(id: int, body: MaquinaUpdate, db: AsyncSession = De
     return maquina
 
 @router.get("/{id}/cola", response_model=list[ColaItemRead])
-async def cola_maquina(id: int, semana: str | None = None, db: AsyncSession = Depends(get_session)):
+async def cola_maquina(id: int, semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
     # Verificar si la máquina existe (si no existe, retornar 404)
     maquina = await db.get(Maquina, id)
     if not maquina:
@@ -67,20 +67,26 @@ async def cola_maquina(id: int, semana: str | None = None, db: AsyncSession = De
 
     params = {"maquina_codigo": maquina.codigo}
     filtro = ""
-    if semana:
+    joins = ""
+    if semana_id:
+        joins = "JOIN sipp.maquinas m ON m.codigo = c.maquina JOIN sipp.semanas_programacion s ON s.fecha_inicio = c.semana_inicio AND s.maquina_id = m.id"
+        filtro = "AND s.id = :semana_id"
+        params["semana_id"] = semana_id
+    elif semana:
         try:
             year, week_num = map(int, semana.split("-W"))
             fecha_inicio = date.fromisocalendar(year, week_num, 1)
-            filtro = "AND semana_inicio = :semana_inicio"
+            filtro = "AND c.semana_inicio = :semana_inicio"
             params["semana_inicio"] = fecha_inicio
         except ValueError:
             return []
 
     sql = text(f"""
-        SELECT * FROM sipp.v_cola_produccion
-        WHERE maquina = :maquina_codigo
+        SELECT c.* FROM sipp.v_cola_produccion c
+        {joins}
+        WHERE c.maquina = :maquina_codigo
         {filtro}
-        ORDER BY posicion
+        ORDER BY c.posicion
     """)
     result = await db.execute(sql, params)
     return result.mappings().all()

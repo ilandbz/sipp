@@ -135,14 +135,21 @@ def render_sidebar(opciones_semanas: list = None) -> str | None:
     
     # Selector de semana
     semana_sel = None
-    if opciones_semanas:
+    if opciones_semanas is not None:
         st.markdown("**Semana**")
-        semana_sel = st.selectbox(
-            "Semana", 
-            opciones_semanas, 
-            label_visibility="collapsed",
-            key="semana_selector"
-        )
+        if isinstance(opciones_semanas, list):
+            st.info("No hay semanas programadas aún")
+            semana_sel = None
+        else:
+            etiqueta_sel = st.selectbox(
+                "Semana", 
+                list(opciones_semanas.keys()), 
+                label_visibility="collapsed",
+                key="semana_selector",
+                help="Selecciona una semana de programación registrada"
+            )
+            semana_sel = opciones_semanas.get(etiqueta_sel)
+        st.session_state["semana_id_activa"] = semana_sel
     
     st.divider()
     

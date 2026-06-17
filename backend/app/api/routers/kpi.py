@@ -9,62 +9,75 @@ from app.schemas.kpi import KpiSemanalRead, IccMatrixResponse, PlanSemanalRead
 router = APIRouter(prefix="/kpi", tags=["KPIs"])
 
 @router.get("/semanal", response_model=List[KpiSemanalRead])
-async def kpi_semanal(semana: str | None = None, db: AsyncSession = Depends(get_session)):
-    query = "SELECT * FROM sipp.v_kpi_semanal"
+async def kpi_semanal(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
+    query = "SELECT k.* FROM sipp.v_kpi_semanal k"
     params = {}
-    if semana:
+    if semana_id:
+        query += " JOIN sipp.maquinas m ON m.codigo = k.maquina JOIN sipp.semanas_programacion s ON s.fecha_inicio = k.fecha_inicio AND s.maquina_id = m.id WHERE s.id = :semana_id"
+        params["semana_id"] = semana_id
+    elif semana:
         try:
             year, week_num = map(int, semana.split("-W"))
             fecha_inicio = date.fromisocalendar(year, week_num, 1)
-            query += " WHERE fecha_inicio = :fecha_inicio"
+            query += " WHERE k.fecha_inicio = :fecha_inicio"
             params["fecha_inicio"] = fecha_inicio
         except ValueError:
             return []
-    query += " ORDER BY maquina"
+    query += " ORDER BY k.maquina"
     
     result = await db.execute(text(query), params)
     rows = result.mappings().all()
     return rows
 
 @router.get("/plan-semanal", response_model=List[PlanSemanalRead])
-async def kpi_plan_semanal(semana: str | None = None, db: AsyncSession = Depends(get_session)):
-    query = "SELECT * FROM sipp.v_plan_semanal"
+async def kpi_plan_semanal(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
+    query = "SELECT k.* FROM sipp.v_plan_semanal k"
     params = {}
-    if semana:
+    if semana_id:
+        query += " JOIN sipp.maquinas m ON m.codigo = k.maquina JOIN sipp.semanas_programacion s ON s.fecha_inicio = k.semana_inicio AND s.maquina_id = m.id WHERE s.id = :semana_id"
+        params["semana_id"] = semana_id
+    elif semana:
         try:
             year, week_num = map(int, semana.split("-W"))
             fecha_inicio = date.fromisocalendar(year, week_num, 1)
-            query += " WHERE semana_inicio = :fecha_inicio"
+            query += " WHERE k.semana_inicio = :fecha_inicio"
             params["fecha_inicio"] = fecha_inicio
         except ValueError:
             return []
-    query += " ORDER BY maquina, posicion"
+    query += " ORDER BY k.maquina, k.posicion"
     
     result = await db.execute(text(query), params)
     rows = result.mappings().all()
     return rows
 
 @router.get("/icc_matrix", response_model=IccMatrixResponse)
-async def kpi_icc_matrix(semana: str | None = None, db: AsyncSession = Depends(get_session)):
-    if not semana:
+async def kpi_icc_matrix(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
+    if not semana and not semana_id:
         return {"matrix": []}
         
-    try:
-        year, week_num = map(int, semana.split("-W"))
-        fecha_inicio = date.fromisocalendar(year, week_num, 1)
-    except ValueError:
-        return {"matrix": []}
+    params = {}
+    if semana_id:
+        where_clause = "WHERE s.id = :semana_id"
+        params["semana_id"] = semana_id
+    else:
+        try:
+            year, week_num = map(int, semana.split("-W"))
+            fecha_inicio = date.fromisocalendar(year, week_num, 1)
+            where_clause = "WHERE s.fecha_inicio = :fecha_inicio"
+            params["fecha_inicio"] = fecha_inicio
+        except ValueError:
+            return {"matrix": []}
         
     # 1. Obtener todas las OFs planificadas para esa semana
-    ofs_query = text("""
+    ofs_query = text(f"""
         SELECT DISTINCT of.id, of.codigo_of
         FROM sipp.secuencias_produccion sp
         JOIN sipp.semanas_programacion s ON s.id = sp.semana_id
         JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
-        WHERE s.fecha_inicio = :fecha_inicio
+        {where_clause}
         ORDER BY of.codigo_of
     """)
-    ofs_res = await db.execute(ofs_query, {"fecha_inicio": fecha_inicio})
+    ofs_res = await db.execute(ofs_query, params)
     of_list = ofs_res.mappings().all()
     
     if not of_list:
