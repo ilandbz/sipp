@@ -45,10 +45,11 @@ with tab_lista:
     st.subheader("Filtrar y Buscar Órdenes")
     col_filtros, col_refresh = st.columns([10, 1])
     with col_filtros:
-        col_f1, col_f2, col_f3 = st.columns(3)
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 4, 1])
         filtro_maq = col_f1.selectbox("Máquina", ["Todas"] + [m["codigo"] for m in maquinas])
         filtro_estado = col_f2.selectbox("Estado", ["Todos", "PENDIENTE", "PROGRAMADA", "EN_PROCESO", "COMPLETADA", "CANCELADA"])
         filtro_buscar = col_f3.text_input("Buscar OF, descripción o código PT")
+        items_por_pagina = col_f4.selectbox("Items/Pág.", [10, 20, 50, 100], index=1)
     
     with col_refresh:
         if st.button("🔄", help="Actualizar lista", use_container_width=True):
@@ -62,7 +63,7 @@ with tab_lista:
         st.info("No hay órdenes que coincidan con los filtros seleccionados.")
     else:
         # Configuración de paginación
-        ITEMS_POR_PAGINA = 20
+        ITEMS_POR_PAGINA = items_por_pagina
 
         # Estado de página actual
         if "pagina_ordenes" not in st.session_state:
