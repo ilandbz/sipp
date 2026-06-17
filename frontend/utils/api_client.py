@@ -43,10 +43,15 @@ def _patch(ruta: str, payload: dict):
 
 def _delete(ruta: str):
     try:
-        r = requests.delete(f"{BASE_URL}{ruta}", headers=_get_headers(), timeout=15)
-        r.raise_for_status()
-        st.cache_data.clear()
-        return True
+        r = requests.delete(
+            f"{BASE_URL}{ruta}",
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code in [200, 204]:
+            st.cache_data.clear()
+            return True
+        return False
     except Exception:
         return False
 
@@ -130,7 +135,23 @@ def actualizar_cliente(id: int, payload: dict):
     return _patch(f"/api/v1/clientes/{id}", payload)
 
 def eliminar_cliente(id: int):
-    return _delete(f"/api/v1/clientes/{id}")
+    try:
+        r = requests.delete(
+            f"{BASE_URL}/api/v1/clientes/{id}",
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code in [200, 204]:
+            st.cache_data.clear()
+            return {"ok": True}
+        else:
+            try:
+                detalle = r.json().get("detail", f"Error {r.status_code}")
+            except Exception:
+                detalle = f"Error HTTP {r.status_code}"
+            return {"ok": False, "error": detalle}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # ── Órdenes de Fabricación ────────────────────────────
 @st.cache_data(ttl=30)
@@ -191,7 +212,8 @@ def eliminar_orden(id: int):
             headers=_get_headers(),
             timeout=15
         )
-        if r.status_code == 200:
+        if r.status_code in [200, 204]:
+            st.cache_data.clear()
             return {"ok": True}
         else:
             try:
@@ -234,7 +256,23 @@ def eliminar_of_semana(semana_id: int, secuencia_id: int):
     return _delete(f"/api/v1/semanas/{semana_id}/secuencias/{secuencia_id}")
 
 def eliminar_semana(id: int):
-    return _delete(f"/api/v1/semanas/{id}")
+    try:
+        r = requests.delete(
+            f"{BASE_URL}/api/v1/semanas/{id}",
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code in [200, 204]:
+            st.cache_data.clear()
+            return {"ok": True}
+        else:
+            try:
+                detalle = r.json().get("detail", f"Error {r.status_code}")
+            except Exception:
+                detalle = f"Error HTTP {r.status_code}"
+            return {"ok": False, "error": detalle}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # ── Optimizador ───────────────────────────────────────
 def ejecutar_optimizador(semana_id: int):
