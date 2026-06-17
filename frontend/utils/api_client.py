@@ -295,8 +295,12 @@ def get_cola_maquina(maquina_id: int, semana: str = None, semana_id: int = None)
         params["semana"] = semana
     return _get(f"/api/v1/maquinas/{maquina_id}/cola", params)
 
-def get_icc_matrix(semana: str = None):
-    params = {"semana": semana} if semana else None
+def get_icc_matrix(semana: str = None, semana_id: int = None):
+    params = {}
+    if semana_id:
+        params["semana_id"] = semana_id
+    elif semana:
+        params["semana"] = semana
     return _get("/api/v1/kpi/icc_matrix", params)
 
 def get_plan_semanal(semana: str = None):
