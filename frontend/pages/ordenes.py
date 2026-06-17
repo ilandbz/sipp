@@ -172,10 +172,13 @@ def _formulario_of(of_existente: dict = None):
         else:
             st.error(resultado_msg["msg"])
 
-    with st.form("form_of", clear_on_submit=not es_ed):
+    prefix = f"ed_{of_existente.get('id', 0)}_" if es_ed else "new_"
+    form_key = f"form_editar_of_{of_existente.get('id', 0)}" if es_ed else "form_nueva_of"
+    
+    with st.form(form_key, clear_on_submit=not es_ed):
         st.subheader("🌟 Datos Obligatorios")
         if es_ed:
-            st.text_input("Código OF", value=of_existente.get("codigo_of", ""), disabled=True)
+            st.text_input("Código OF", value=of_existente.get("codigo_of", ""), disabled=True, key=f"{prefix}codigo_of_disabled")
             codigo_of = of_existente.get("codigo_of", "")
         else:
             st.info("📋 El código OF se genera automáticamente al guardar")
@@ -183,61 +186,64 @@ def _formulario_of(of_existente: dict = None):
                 codigo_of_manual = st.text_input(
                     "Código OF manual",
                     placeholder="Dejar vacío para autogenerar (ej: 2606-0001)",
-                    help="Solo usar si necesitas un código específico del sistema anterior"
+                    help="Solo usar si necesitas un código específico del sistema anterior",
+                    key=f"{prefix}codigo_of_manual"
                 )
             codigo_of = codigo_of_manual.strip()
 
-        descripcion = st.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "")
+        descripcion = st.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "", key=f"{prefix}descripcion")
         
         # Campo medida texto (referencia rápida)
         medida_texto = st.text_input(
             "Medida (referencia)",
             value=of_existente.get("medida_texto", "") if es_ed else "",
             placeholder="Ej: 18X32X10.5 — se actualiza al guardar si ingresas Ancho/Alto/Fuelle",
-            help="Si ingresas Ancho, Alto y Fuelle, la medida se calcula automáticamente"
+            help="Si ingresas Ancho, Alto y Fuelle, la medida se calcula automáticamente",
+            key=f"{prefix}medida_texto"
         )
         
         col_m1, col_m2, col_m3 = st.columns(3)
-        maq_sel = col_m1.selectbox("Máquina *", list(maq_opciones.keys()), index=idx_maq)
-        mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat)
-        bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa)
+        maq_sel = col_m1.selectbox("Máquina *", list(maq_opciones.keys()), index=idx_maq, key=f"{prefix}maq_sel")
+        mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat, key=f"{prefix}mat_sel")
+        bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
         
         st.write("**Medida (mm) ***")
         col_dim1, col_dim2, col_dim3 = st.columns(3)
-        ancho = col_dim1.number_input("Ancho", min_value=0.0, step=0.5, value=float(of_existente.get("ancho_mm") or 0.0) if es_ed else 0.0)
-        alto = col_dim2.number_input("Alto", min_value=0.0, step=0.5, value=float(of_existente.get("alto_mm") or 0.0) if es_ed else 0.0)
-        fuelle = col_dim3.number_input("Fuelle", min_value=0.0, step=0.5, value=float(of_existente.get("fuelle_mm") or 0.0) if es_ed else 0.0)
+        ancho = col_dim1.number_input("Ancho", min_value=0.0, step=0.5, value=float(of_existente.get("ancho_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}ancho")
+        alto = col_dim2.number_input("Alto", min_value=0.0, step=0.5, value=float(of_existente.get("alto_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}alto")
+        fuelle = col_dim3.number_input("Fuelle", min_value=0.0, step=0.5, value=float(of_existente.get("fuelle_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}fuelle")
         
         col_c1, col_c2, col_c3 = st.columns(3)
-        colores_det = col_c1.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "")
-        cant_prog = col_c2.number_input("Cantidad a producir (Millares) *", min_value=0.0, step=0.1, value=float(of_existente.get("cantidad_programada") or 0.0) if es_ed else 0.0)
-        fecha_entrega = col_c3.date_input("Fecha de entrega *", value=val_entrega)
+        colores_det = col_c1.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "", key=f"{prefix}colores_det")
+        cant_prog = col_c2.number_input("Cantidad a producir (Millares) *", min_value=0.0, step=0.1, value=float(of_existente.get("cantidad_programada") or 0.0) if es_ed else 0.0, key=f"{prefix}cant_prog")
+        fecha_entrega = col_c3.date_input("Fecha de entrega *", value=val_entrega, key=f"{prefix}fecha_entrega")
         
         col_c4, col_c5 = st.columns(2)
-        cli_sel = col_c4.selectbox("Cliente", ["Sin cliente"] + list(cli_opciones.keys()), index=idx_cli)
+        cli_sel = col_c4.selectbox("Cliente", ["Sin cliente"] + list(cli_opciones.keys()), index=idx_cli, key=f"{prefix}cli_sel")
         prioridad_sel = col_c5.selectbox(
             "Urgencia del pedido *", 
             ["1 - Alta", "2 - Media", "3 - Baja"], 
             index=idx_prio,
-            help="Úsalo solo para pedidos urgentes independiente del cliente. La prioridad del cliente viene de su Franquicia."
+            help="Úsalo solo para pedidos urgentes independiente del cliente. La prioridad del cliente viene de su Franquicia.",
+            key=f"{prefix}prioridad_sel"
         )
 
         with st.expander("➕ Datos adicionales"):
             col_o1, col_o2 = st.columns(2)
-            codigo_pt = col_o1.text_input("Código PT", value=of_existente.get("codigo_pt", "") if es_ed else "")
-            cil_sel = col_o2.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil)
+            codigo_pt = col_o1.text_input("Código PT", value=of_existente.get("codigo_pt", "") if es_ed else "", key=f"{prefix}codigo_pt")
+            cil_sel = col_o2.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil, key=f"{prefix}cil_sel")
             
             col_o3, col_o4 = st.columns(2)
-            gramaje = col_o3.number_input("Gramaje", min_value=0.0, step=1.0, value=float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0)
-            num_colores = col_o4.number_input("Número de colores", min_value=0, max_value=6, step=1, value=int(of_existente.get("num_colores") or 0) if es_ed else 0)
+            gramaje = col_o3.number_input("Gramaje", min_value=0.0, step=1.0, value=float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0, key=f"{prefix}gramaje")
+            num_colores = col_o4.number_input("Número de colores", min_value=0, max_value=6, step=1, value=int(of_existente.get("num_colores") or 0) if es_ed else 0, key=f"{prefix}num_colores")
             
             col_o5, col_o6 = st.columns(2)
-            peso_mil = col_o5.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0)
-            leva_req = col_o6.text_input("Leva requerida", value=of_existente.get("leva_requerida", "") if es_ed else "")
+            peso_mil = col_o5.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
+            leva_req = col_o6.text_input("Leva requerida", value=of_existente.get("leva_requerida", "") if es_ed else "", key=f"{prefix}leva_req")
             
-            dist_base = st.number_input("Distancia de base (mm)", min_value=0.0, step=0.1, value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0)
+            dist_base = st.number_input("Distancia de base (mm)", min_value=0.0, step=0.1, value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}dist_base")
             
-            observacion = st.text_area("Observación", value=of_existente.get("observacion", "") if es_ed else "")
+            observacion = st.text_area("Observación", value=of_existente.get("observacion", "") if es_ed else "", key=f"{prefix}observacion")
 
         st.info("""
         ℹ️ **Campos Calculados Automáticamente:**
