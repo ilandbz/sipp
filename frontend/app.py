@@ -228,48 +228,26 @@ with col_icc:
     st.divider()
     if can("optimizar"):
         if st.button("▶ Ejecutar Optimizador", type="primary", use_container_width=True):
-            with st.spinner("Optimizando secuencias para la semana..."):
-                try:
-                    year, week_num = map(int, semana_sel.split("-W"))
-                    fecha_inicio_str = str(datetime.date.fromisocalendar(year, week_num, 1))
-                except ValueError:
-                    st.error("Formato de semana inválido.")
-                    st.stop()
-                
-                semanas_registradas = get_semanas() or []
-                semanas_a_optimizar = [
-                    s for s in semanas_registradas 
-                    if s["fecha_inicio"] == fecha_inicio_str and s["maquina_codigo"] in ["M8", "M10", "M14"]
-                ]
-                
-                if not semanas_a_optimizar:
-                    st.warning("No se encontraron semanas programadas para M8, M10 o M14 en esta fecha. Regístrelas en la página de Semanas.")
+            semana_id = st.session_state.get("semana_id_activa", semana_sel)
+            if not semana_id:
+                st.error("Selecciona una semana primero")
+            else:
+                with st.spinner("Optimizando secuencias..."):
+                    resultado = ejecutar_optimizador(semana_id=semana_id)
+                if resultado and resultado.get("ordenes_evaluadas", 0) > 0:
+                    reduccion = resultado.get("reduccion_pct", 0)
+                    antes = resultado.get("setup_antes_horas", 0)
+                    despues = resultado.get("setup_despues_horas", 0)
+                    st.session_state["optimizer_success_msg"] = (
+                        f"✓ {resultado['ordenes_evaluadas']} órdenes optimizadas | "
+                        f"Setup: {antes:.1f}h → {despues:.1f}h "
+                        f"({reduccion:.1f}% reducción)"
+                    )
+                    st.cache_data.clear()
+                    st.rerun()
+                elif resultado:
+                    st.warning("No hay órdenes pendientes para optimizar en esta semana")
                 else:
-                    total_evaluadas = 0
-                    total_antes_h = 0.0
-                    total_despues_h = 0.0
-                    optimizados_con_exito = 0
-                    
-                    for sem in semanas_a_optimizar:
-                        semanas = get_semanas() or []
-                        semana_obj = next((s for s in semanas if s.get("id") == 1), None)
-                        semana_id = semana_obj["id"] if semana_obj else 1
-                        resultado = ejecutar_optimizador(semana_id=semana_id)
-                        if resultado:
-                            total_evaluadas += resultado.get("ordenes_evaluadas", 0)
-                            total_antes_h += resultado.get("setup_antes_horas", 0.0)
-                            total_despues_h += resultado.get("setup_despues_horas", 0.0)
-                            optimizados_con_exito += 1
-                            
-                    if optimizados_con_exito > 0:
-                        reduccion_pct = round(((total_antes_h - total_despues_h) / total_antes_h * 100.0), 1) if total_antes_h > 0 else 0.0
-                        st.session_state["optimizer_success_msg"] = (
-                            f"✓ {total_evaluadas} órdenes secuenciadas | "
-                            f"Setup reducido de {total_antes_h:.1f}h a {total_despues_h:.1f}h "
-                            f"({reduccion_pct}% mejora)"
-                        )
-                        st.rerun()
-                    else:
-                        st.error("Error al ejecutar el optimizador en las semanas correspondientes.")
+                    st.error("Error al ejecutar el optimizador")
     else:
         st.info("🔒 No tienes permisos para ejecutar el optimizador.")
