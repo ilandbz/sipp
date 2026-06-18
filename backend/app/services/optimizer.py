@@ -16,58 +16,72 @@ async def cargar_penalizaciones(db) -> dict[str, float]:
     return {p.tipo_cambio: float(p.minutos) for p in result.scalars().all()}
 
 async def optimizar_semana(db, semana_id: int) -> dict:
-    semana = await db.get(SemanaProgramacion, semana_id)
+    # Cargar semana
+    result = await db.execute(text(
+        "SELECT * FROM sipp.semanas_programacion WHERE id = :id"
+    ), {"id": semana_id})
+    semana = result.mappings().one_or_none()
     if not semana:
-        return {"ordenes_evaluadas": 0, "setup_antes_min": 0.0, "setup_despues_min": 0.0}
+        raise ValueError(f"Semana {semana_id} no encontrada")
 
     penalizaciones = await cargar_penalizaciones(db)
-    es_global = getattr(semana, 'es_global', False) or semana.maquina_id is None
+    es_global = semana.get("es_global", False) or semana.get("maquina_id") is None
 
     if es_global:
-        # Semana global: obtener las máquinas M8, M10, M14
+        # Obtener máquinas que tienen OFs en esta semana
         result_maq = await db.execute(text("""
-            SELECT id, codigo FROM sipp.maquinas 
-            WHERE codigo IN ('M8','M10','M14') AND activa = TRUE
-            ORDER BY codigo
-        """))
+            SELECT DISTINCT m.id, m.codigo
+            FROM sipp.maquinas m
+            JOIN sipp.ordenes_fabricacion of ON of.maquina_asignada_id = m.id
+            JOIN sipp.secuencias_produccion sp ON sp.orden_fabricacion_id = of.id
+            WHERE sp.semana_id = :semana_id
+            AND sp.estado != 'COMPLETADA'
+            ORDER BY m.codigo
+        """), {"semana_id": semana_id})
         maquinas = result_maq.mappings().all()
-        
-        # Optimizar cada máquina por separado
-        resultado_global = {
-            "ordenes_evaluadas": 0,
-            "setup_antes_min": 0,
-            "setup_despues_min": 0,
-            "reduccion_pct": 0,
-            "por_maquina": []
-        }
-        
+
+        if not maquinas:
+            return {
+                "ordenes_evaluadas": 0,
+                "setup_antes_min": 0.0,
+                "setup_despues_min": 0.0,
+                "setup_antes_horas": 0.0,
+                "setup_despues_horas": 0.0,
+                "reduccion_pct": 0.0,
+                "por_maquina": []
+            }
+
+        total_antes = 0.0
+        total_despues = 0.0
+        total_ofs = 0
+        por_maquina = []
+
         for maq in maquinas:
-            res_maq = await _optimizar_maquina(
-                db, semana_id, maq["id"], maq["codigo"], penalizaciones, semana.fecha_inicio
+            res = await _optimizar_maquina(
+                db, semana_id, maq["id"], maq["codigo"], penalizaciones, semana["fecha_inicio"]
             )
-            resultado_global["ordenes_evaluadas"] += res_maq.get("ordenes_evaluadas", 0)
-            resultado_global["setup_antes_min"]   += res_maq.get("setup_antes_min", 0)
-            resultado_global["setup_despues_min"] += res_maq.get("setup_despues_min", 0)
-            resultado_global["por_maquina"].append({
-                "maquina": maq["codigo"],
-                **res_maq
-            })
-        
-        # Calcular reducción global
-        antes = resultado_global["setup_antes_min"]
-        despues = resultado_global["setup_despues_min"]
-        resultado_global["reduccion_pct"] = round(
-            (antes - despues) / antes * 100 if antes > 0 else 0, 1
+            total_antes   += res.get("setup_antes_min", 0)
+            total_despues += res.get("setup_despues_min", 0)
+            total_ofs     += res.get("ordenes_evaluadas", 0)
+            por_maquina.append({"maquina": maq["codigo"], **res})
+
+        reduccion = round(
+            (total_antes - total_despues) / total_antes * 100
+            if total_antes > 0 else 0, 1
         )
-        resultado_global["setup_antes_horas"]   = round(antes / 60, 2)
-        resultado_global["setup_despues_horas"] = round(despues / 60, 2)
-        
-        return resultado_global
+        return {
+            "ordenes_evaluadas":  total_ofs,
+            "setup_antes_min":    round(total_antes, 1),
+            "setup_despues_min":  round(total_despues, 1),
+            "setup_antes_horas":  round(total_antes / 60, 2),
+            "setup_despues_horas": round(total_despues / 60, 2),
+            "reduccion_pct":      reduccion,
+            "por_maquina":        por_maquina
+        }
     else:
-        # Semana específica: optimizar solo la máquina de esa semana
-        maquina = await db.get(Maquina, semana.maquina_id)
+        # Semana específica
         return await _optimizar_maquina(
-            db, semana_id, semana.maquina_id, maquina.codigo if maquina else None, penalizaciones, semana.fecha_inicio
+            db, semana_id, semana["maquina_id"], None, penalizaciones, semana["fecha_inicio"]
         )
 
 async def _optimizar_maquina(db, semana_id, maquina_id, maquina_codigo, penalizaciones, fecha_inicio):

@@ -330,6 +330,15 @@ with col_cola:
 
 with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")
+    
+    st.caption("""
+        **Matriz de Compatibilidad (ICC):** Muestra qué tan eficiente 
+        es producir una OF seguida de otra.
+        🟢 Verde = compatible (poco setup) | 🔴 Rojo = incompatible (mucho setup)
+        La diagonal siempre es 100 (misma OF). 
+        El optimizador agrupa las OFs más compatibles juntas.
+    """)
+    
     if semana_sel:
         render_matriz_icc(semana_id=semana_sel)
     

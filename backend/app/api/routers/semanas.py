@@ -210,80 +210,87 @@ async def ofs_disponibles(semana_id: int, db: AsyncSession = Depends(get_session
 class AgregarOfRequest(BaseModel):
     of_id: int
 
-@router.post("/{semana_id}/agregar-of", status_code=201)
-async def agregar_of(
-    semana_id: int,
-    body: AgregarOfRequest,
-    db: AsyncSession = Depends(get_session)
-):
+@router.post("/{semana_id}/agregar-of")
+async def agregar_of(semana_id: int, body: AgregarOfRequest,
+                     db: AsyncSession = Depends(get_session)):
     try:
-        # 1. Verificar que la semana existe
-        semana = await db.get(SemanaProgramacion, semana_id)
+        semana = await db.execute(text(
+            "SELECT * FROM sipp.semanas_programacion WHERE id = :id"
+        ), {"id": semana_id})
+        semana = semana.mappings().one_or_none()
         if not semana:
             raise HTTPException(404, "Semana no encontrada")
-        
-        # 2. Verificar que la OF existe
-        of = await db.get(OrdenFabricacion, body.of_id)
-        if not of:
-            raise HTTPException(404, "Orden de fabricación no encontrada")
-            
-        # Asignar máquina automáticamente si no la tiene y la semana es global
-        if semana.es_global and not of.maquina_asignada_id:
-            from app.services.asignador import sugerir_maquina
-            sugerencias = await sugerir_maquina(db, of.id)
-            if sugerencias:
-                mejor_maq_id = sugerencias[0]["maquina_id"]
-                of.maquina_asignada_id = mejor_maq_id
-                db.add(of)
-                await db.flush()
-        
-        # 3. Verificar que la OF no está ya en una secuencia
-        from sqlmodel import select
-        existe = await db.execute(
-            select(SecuenciaProduccion).where(
-                SecuenciaProduccion.orden_fabricacion_id == body.of_id
-            )
-        )
-        if existe.scalar_one_or_none():
-            raise HTTPException(400, "Esta OF ya está asignada a una semana de producción")
-        
-        # 4. Calcular siguiente posición
-        count_result = await db.execute(
-            select(func.count(SecuenciaProduccion.id)).where(
-                SecuenciaProduccion.semana_id == semana_id
-            )
-        )
-        siguiente_pos = (count_result.scalar() or 0) + 1
-        
-        # 5. Crear la secuencia usando los nombres EXACTOS de campos del modelo
-        nueva_secuencia = SecuenciaProduccion(
-            semana_id=semana_id,
-            orden_fabricacion_id=body.of_id,
-            posicion=siguiente_pos,
-            costo_setup_min=0.0,
-            motivo_setup="Asignación manual",
-            estado="PENDIENTE"
-        )
-        
-        # Strip tz to avoid asyncpg DataError
-        for field_name in ["created_at", "updated_at"]:
-            val = getattr(nueva_secuencia, field_name, None)
-            if isinstance(val, datetime) and val.tzinfo is not None:
-                setattr(nueva_secuencia, field_name, val.replace(tzinfo=None))
 
-        db.add(nueva_secuencia)
-        await db.flush()
+        of_result = await db.execute(text(
+            "SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"
+        ), {"id": body.of_id})
+        of = of_result.mappings().one_or_none()
+        if not of:
+            raise HTTPException(404, "Orden no encontrada")
+
+        # Verificar que no está ya en esta semana
+        existe = await db.execute(text("""
+            SELECT id FROM sipp.secuencias_produccion
+            WHERE semana_id = :semana_id AND orden_fabricacion_id = :of_id
+        """), {"semana_id": semana_id, "of_id": body.of_id})
+        if existe.scalar_one_or_none():
+            raise HTTPException(400, "Esta OF ya está en esta semana")
+
+        # Si la semana es global Y la OF no tiene máquina asignada
+        # → asignar automáticamente la mejor máquina
+        maquina_id = of.get("maquina_asignada_id")
+        
+        es_global = semana.get("es_global", False)
+        
+        if es_global and not maquina_id:
+            # Llamar al asignador para sugerir máquina
+            from app.services.asignador import sugerir_maquina
+            sugerencias = await sugerir_maquina(db, body.of_id)
+            if sugerencias:
+                maquina_id = sugerencias[0]["maquina_id"]
+                # Actualizar la OF con la máquina asignada
+                await db.execute(text("""
+                    UPDATE sipp.ordenes_fabricacion
+                    SET maquina_asignada_id = :maq_id,
+                        updated_at = NOW()
+                    WHERE id = :of_id
+                """), {"maq_id": maquina_id, "of_id": body.of_id})
+        
+        if not maquina_id:
+            raise HTTPException(400,
+                "La OF no tiene máquina asignada y no se pudo sugerir una. "
+                "Asigna una máquina a la OF antes de agregarla.")
+
+        # Calcular posición
+        count = await db.execute(text("""
+            SELECT COUNT(*) FROM sipp.secuencias_produccion
+            WHERE semana_id = :semana_id
+        """), {"semana_id": semana_id})
+        siguiente_pos = (count.scalar() or 0) + 1
+
+        # Crear secuencia
+        await db.execute(text("""
+            INSERT INTO sipp.secuencias_produccion
+                (semana_id, orden_fabricacion_id, posicion, 
+                 costo_setup_min, estado, motivo_setup)
+            VALUES
+                (:semana_id, :of_id, :pos, 0, 'PENDIENTE', 'Asignación manual')
+        """), {"semana_id": semana_id, "of_id": body.of_id, "pos": siguiente_pos})
+
         await db.commit()
-        await db.refresh(nueva_secuencia)
-        return nueva_secuencia
+        
+        return {
+            "ok": True,
+            "posicion": siguiente_pos,
+            "maquina_asignada_id": maquina_id,
+            "mensaje": f"OF agregada en posición {siguiente_pos}"
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno: {str(e)} | {traceback.format_exc()}"
-        )
+        await db.rollback()
+        raise HTTPException(500, f"Error: {str(e)}")
 
 class ReordenarRequest(BaseModel):
     orden: List[int]

@@ -339,22 +339,29 @@ with col_lista:
                         st.info("No se encontraron resultados para la búsqueda.")
                     else:
                         # Encabezados
-                        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6 = st.columns([2, 3, 2, 2, 2, 2])
+                        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7 = st.columns([1.5, 2.5, 2, 1.5, 1.5, 2, 1.5])
                         c_h1.write("**OF**")
                         c_h2.write("**Descripción**")
                         c_h3.write("**Medida**")
                         c_h4.write("**Material**")
                         c_h5.write("**F. Entrega**")
-                        c_h6.write("")
+                        c_h6.write("**Máquina**")
+                        c_h7.write("")
                         st.divider()
 
                         for of in ofs_disp:
-                            col_of, col_desc, col_medida, col_material, col_entrega, col_btn = st.columns([2, 3, 2, 2, 2, 2])
+                            col_of, col_desc, col_medida, col_material, col_entrega, col_maq, col_btn = st.columns([1.5, 2.5, 2, 1.5, 1.5, 2, 1.5])
                             col_of.write(f"**{of['codigo_of']}**")
                             col_desc.write(of['descripcion'] or "-")
                             col_medida.write(of['medida_texto'] or "-")
                             col_material.write(of.get('material_nombre') or "-")
                             col_entrega.write(of['fecha_entrega'] or "-")
+                            
+                            if of.get('maquina_asignada_id'):
+                                maq_cod = of.get('maquina_codigo') or f"M{of.get('maquina_asignada_id')}"
+                                col_maq.markdown(f":green[{maq_cod} ✓]")
+                            else:
+                                col_maq.caption("🤖 Se asignará automáticamente")
                             
                             btn_key = f"add_of_{selected_semana_id}_{of['id']}"
                             if col_btn.button("➕ Agregar", key=btn_key, use_container_width=True):

@@ -222,7 +222,7 @@ def _formulario_of(of_existente: dict = None):
     es_ed = of_existente is not None
     
     # Mapeos de catálogos
-    maq_opciones = {"Automático (Optimizador)": None}
+    maq_opciones = {"🤖 Asignar automáticamente (recomendado)": None}
     for m in maquinas:
         maq_opciones[m["codigo"]] = m["id"]
     cli_opciones = {c["razon_social"]: c["id"] for c in clientes}
