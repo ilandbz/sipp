@@ -342,20 +342,30 @@ with col_icc:
             else:
                 with st.spinner("Optimizando secuencias..."):
                     resultado = ejecutar_optimizador(semana_id=semana_id)
-                if resultado and resultado.get("ordenes_evaluadas", 0) > 0:
+                if resultado is None:
+                    st.error("❌ Error al ejecutar el optimizador. "
+                             "Verifique que las OFs tienen máquina asignada.")
+                elif resultado.get("ordenes_evaluadas", 0) == 0:
+                    st.warning("⚠ No hay órdenes pendientes para optimizar. "
+                               "Agrega OFs a la semana primero desde /semanas")
+                else:
                     reduccion = resultado.get("reduccion_pct", 0)
                     antes = resultado.get("setup_antes_horas", 0)
                     despues = resultado.get("setup_despues_horas", 0)
-                    st.session_state["optimizer_success_msg"] = (
-                        f"✓ {resultado['ordenes_evaluadas']} órdenes optimizadas | "
-                        f"Setup: {antes:.1f}h → {despues:.1f}h "
-                        f"({reduccion:.1f}% reducción)"
-                    )
+                    
+                    if reduccion > 0:
+                        st.session_state["optimizer_success_msg"] = (
+                            f"✓ {resultado['ordenes_evaluadas']} órdenes optimizadas | "
+                            f"Setup: {antes:.1f}h → {despues:.1f}h "
+                            f"({reduccion:.1f}% reducción ↓)"
+                        )
+                    else:
+                        st.session_state["optimizer_success_msg"] = (
+                            f"✓ {resultado['ordenes_evaluadas']} órdenes secuenciadas | "
+                            f"Setup total: {despues:.1f}h "
+                            f"(ya estaban en orden óptimo)"
+                        )
                     st.cache_data.clear()
                     st.rerun()
-                elif resultado:
-                    st.warning("No hay órdenes pendientes para optimizar en esta semana")
-                else:
-                    st.error("Error al ejecutar el optimizador")
     else:
         st.info("🔒 No tienes permisos para ejecutar el optimizador.")

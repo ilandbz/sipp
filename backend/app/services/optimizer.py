@@ -20,11 +20,70 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     if not semana:
         return {"ordenes_evaluadas": 0, "setup_antes_min": 0.0, "setup_despues_min": 0.0}
 
-    maquina = await db.get(Maquina, semana.maquina_id)
     penalizaciones = await cargar_penalizaciones(db)
+    es_global = getattr(semana, 'es_global', False) or semana.maquina_id is None
+
+    if es_global:
+        # Semana global: obtener las máquinas M8, M10, M14
+        result_maq = await db.execute(text("""
+            SELECT id, codigo FROM sipp.maquinas 
+            WHERE codigo IN ('M8','M10','M14') AND activa = TRUE
+            ORDER BY codigo
+        """))
+        maquinas = result_maq.mappings().all()
+        
+        # Optimizar cada máquina por separado
+        resultado_global = {
+            "ordenes_evaluadas": 0,
+            "setup_antes_min": 0,
+            "setup_despues_min": 0,
+            "reduccion_pct": 0,
+            "por_maquina": []
+        }
+        
+        for maq in maquinas:
+            res_maq = await _optimizar_maquina(
+                db, semana_id, maq["id"], maq["codigo"], penalizaciones, semana.fecha_inicio
+            )
+            resultado_global["ordenes_evaluadas"] += res_maq.get("ordenes_evaluadas", 0)
+            resultado_global["setup_antes_min"]   += res_maq.get("setup_antes_min", 0)
+            resultado_global["setup_despues_min"] += res_maq.get("setup_despues_min", 0)
+            resultado_global["por_maquina"].append({
+                "maquina": maq["codigo"],
+                **res_maq
+            })
+        
+        # Calcular reducción global
+        antes = resultado_global["setup_antes_min"]
+        despues = resultado_global["setup_despues_min"]
+        resultado_global["reduccion_pct"] = round(
+            (antes - despues) / antes * 100 if antes > 0 else 0, 1
+        )
+        resultado_global["setup_antes_horas"]   = round(antes / 60, 2)
+        resultado_global["setup_despues_horas"] = round(despues / 60, 2)
+        
+        return resultado_global
+    else:
+        # Semana específica: optimizar solo la máquina de esa semana
+        maquina = await db.get(Maquina, semana.maquina_id)
+        return await _optimizar_maquina(
+            db, semana_id, semana.maquina_id, maquina.codigo if maquina else None, penalizaciones, semana.fecha_inicio
+        )
+
+async def _optimizar_maquina(db, semana_id, maquina_id, maquina_codigo, penalizaciones, fecha_inicio):
+    """
+    Optimiza las OFs de UNA máquina dentro de una semana.
+    Funciona tanto para semanas globales como específicas.
+    """
+    maquina = await db.get(Maquina, maquina_id)
+    if not maquina:
+        return {
+            "ordenes_evaluadas": 0, "setup_antes_min": 0.0, "setup_antes_horas": 0.0,
+            "setup_despues_min": 0.0, "setup_despues_horas": 0.0, "reduccion_pct": 0.0, "secuencia": []
+        }
 
     # Estado previo de la máquina
-    res_estado = await db.execute(select(UltimoEstadoMaquina).where(UltimoEstadoMaquina.maquina_id == semana.maquina_id))
+    res_estado = await db.execute(select(UltimoEstadoMaquina).where(UltimoEstadoMaquina.maquina_id == maquina_id))
     estado_previo = res_estado.scalars().first()
     of_previa_mock = None
     if estado_previo:
@@ -37,11 +96,13 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             colores_detalle=estado_previo.color_principal
         )
 
-    # OFs pendientes
+    # Cargar OFs usando SQLModel para tener instancias
     res_ofs = await db.execute(
         select(OrdenFabricacion)
-        .where(OrdenFabricacion.maquina_asignada_id == semana.maquina_id)
-        .where(OrdenFabricacion.estado == "PENDIENTE")
+        .join(SecuenciaProduccion, SecuenciaProduccion.orden_fabricacion_id == OrdenFabricacion.id)
+        .where(SecuenciaProduccion.semana_id == semana_id)
+        .where(OrdenFabricacion.maquina_asignada_id == maquina_id)
+        .where(SecuenciaProduccion.estado != 'COMPLETADA')
     )
     ofs = res_ofs.scalars().all()
 
@@ -80,7 +141,6 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                 if mat and mat.factor_velocidad is not None:
                     factor_vel = float(mat.factor_velocidad)
             
-            # import calcular_horas_produccion localmente o definir la formula:
             bolsas_por_minuto = (maquina.velocidad_bpm_max or 100.0) * factor_vel
             if of.cantidad_programada and bolsas_por_minuto > 0:
                 minutos = (of.cantidad_programada * 1000) / bolsas_por_minuto
@@ -90,11 +150,18 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             db.add(of)
     await db.flush()
 
-    # Eliminar previas
-    await db.execute(text("DELETE FROM sipp.secuencias_produccion WHERE semana_id = :semana_id"), {"semana_id": semana_id})
+    # Eliminar previas (solo para esta máquina en esta semana)
+    await db.execute(text("""
+        DELETE FROM sipp.secuencias_produccion 
+        WHERE id IN (
+            SELECT sp.id FROM sipp.secuencias_produccion sp
+            JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+            WHERE sp.semana_id = :semana_id AND of.maquina_asignada_id = :maquina_id
+        )
+    """), {"semana_id": semana_id, "maquina_id": maquina_id})
 
     setup_despues = 0.0
-    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time())
+    fin_anterior = datetime.combine(fecha_inicio, datetime.min.time())
     secuencia_resultado = []
 
     for pos, of in enumerate(ofs_ordenadas, start=1):
@@ -165,7 +232,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     
     log = LogOptimizacion(
         semana_id=semana_id,
-        maquina_id=semana.maquina_id,
+        maquina_id=maquina_id,
         ordenes_evaluadas=len(ofs_ordenadas),
         setup_total_antes_min=setup_antes,
         setup_total_despues_min=setup_despues,
@@ -179,7 +246,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     if len(ofs_ordenadas) > 0:
         ultima_of = ofs_ordenadas[-1]
         if not estado_previo:
-            estado_previo = UltimoEstadoMaquina(maquina_id=semana.maquina_id)
+            estado_previo = UltimoEstadoMaquina(maquina_id=maquina_id)
             db.add(estado_previo)
         estado_previo.ultima_of_id = ultima_of.id
         estado_previo.ancho_mm = ultima_of.ancho_mm

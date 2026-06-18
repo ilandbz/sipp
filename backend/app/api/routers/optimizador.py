@@ -17,8 +17,11 @@ router = APIRouter(prefix="/optimizador", tags=["Optimizador"])
 
 @router.post("/ejecutar", status_code=status.HTTP_200_OK)
 async def ejecutar(body: OptimizarRequest, db: AsyncSession = Depends(get_session)):
-    resultado = await optimizar_semana(db, body.semana_id)
-    return resultado
+    try:
+        resultado = await optimizar_semana(db, body.semana_id)
+        return resultado
+    except Exception as e:
+        raise HTTPException(500, f"Error en optimizador: {str(e)}")
 
 @router.post("/calcular-tiempos", status_code=status.HTTP_200_OK)
 async def calcular_tiempos(body: CalcularTiemposRequest, db: AsyncSession = Depends(get_session)):
