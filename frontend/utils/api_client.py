@@ -244,7 +244,25 @@ def get_semana_activa():
     return _get("/api/v1/semanas/activa")
 
 def crear_semana(payload: dict):
-    return _post("/api/v1/semanas/", payload)
+    try:
+        r = requests.post(
+            f"{BASE_URL}/api/v1/semanas/",
+            json=payload,
+            headers=_get_headers(),
+            timeout=15
+        )
+        if r.status_code in [200, 201]:
+            st.cache_data.clear()
+            return r.json()
+        else:
+            try:
+                print(f"Error crear semana: {r.status_code} - {r.text}")
+            except:
+                pass
+            return None
+    except Exception as e:
+        print(f"Exception crear semana: {e}")
+        return None
 
 def actualizar_estado_semana(id: int, estado: str):
     return _patch(f"/api/v1/semanas/{id}/estado", {"estado": estado})

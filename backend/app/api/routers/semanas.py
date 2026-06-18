@@ -42,62 +42,56 @@ async def listar_semanas(db: AsyncSession = Depends(get_session)):
         
     return semanas_read
 
-@router.post("/", response_model=SemanaProgramacionRead, status_code=status.HTTP_201_CREATED)
-async def crear_semana(body: SemanaProgramacionCreate, db: AsyncSession = Depends(get_session)):
-    if body.es_global:
-        body.maquina_id = None
-        maquina = None
-        stmt_check = select(SemanaProgramacion).where(
-            SemanaProgramacion.es_global == True,
-            SemanaProgramacion.fecha_inicio == body.fecha_inicio
-        )
-    else:
-        maquina = await db.get(Maquina, body.maquina_id)
-        if not maquina:
-            raise HTTPException(status_code=404, detail="Máquina no encontrada")
-        stmt_check = select(SemanaProgramacion).where(
-            SemanaProgramacion.maquina_id == body.maquina_id,
-            SemanaProgramacion.fecha_inicio == body.fecha_inicio
-        )
-        
-    res_check = await db.execute(stmt_check)
-    if res_check.scalars().first():
-        raise HTTPException(status_code=400, detail="Ya existe una semana para estas condiciones")
+@router.post("/", status_code=201)
+async def crear_semana(body: SemanaProgramacionCreate,
+                       db: AsyncSession = Depends(get_session)):
+    try:
+        from sqlalchemy import text
+        from datetime import date, timedelta
 
-    # Calcular dias hábiles
-    dias_habiles = 0
-    curr = body.fecha_inicio
-    while curr <= body.fecha_fin:
-        if curr.weekday() < 5:
-            dias_habiles += 1
-        curr += timedelta(days=1)
-        
-    horas_disponibles = dias_habiles * 8.0
-    if body.es_global:
-        horas_disponibles *= 3
-    
-    semana = SemanaProgramacion(
-        maquina_id=body.maquina_id,
-        fecha_inicio=body.fecha_inicio,
-        fecha_fin=body.fecha_fin,
-        horas_disponibles=horas_disponibles,
-        estado=body.estado or "BORRADOR",
-        es_global=body.es_global,
-        created_by=body.created_by
-    )
-    
-    for field_name in ["created_at", "updated_at"]:
-        val = getattr(semana, field_name, None)
-        if isinstance(val, datetime) and val.tzinfo is not None:
-            setattr(semana, field_name, val.replace(tzinfo=None))
-            
-    db.add(semana)
-    await db.flush()
-    await db.commit()
-    
-    sem_data = semana.model_dump()
-    sem_data["maquina_codigo"] = "GLOBAL" if body.es_global else maquina.codigo
-    return SemanaProgramacionRead(**sem_data)
+        fecha_inicio = body.fecha_inicio
+        fecha_fin    = body.fecha_fin
+        es_global    = getattr(body, 'es_global', False)
+        maquina_id   = None if es_global else body.maquina_id
+
+        # Validar máquina si no es global
+        if not es_global and not maquina_id:
+            raise HTTPException(400, "Máquina requerida para semana específica")
+
+        # Calcular días hábiles
+        dias_habiles = sum(
+            1 for i in range((fecha_fin - fecha_inicio).days + 1)
+            if (fecha_inicio + timedelta(days=i)).weekday() < 5
+        )
+        factor = 3 if es_global else 1
+        horas_disponibles = dias_habiles * 8.0 * factor
+
+        # Insertar con SQL directo para evitar problemas de FK con NULL
+        result = await db.execute(text("""
+            INSERT INTO sipp.semanas_programacion
+                (maquina_id, fecha_inicio, fecha_fin,
+                 horas_disponibles, estado, es_global, created_by)
+            VALUES
+                (:maquina_id, :fecha_inicio, :fecha_fin,
+                 :horas_disponibles, 'BORRADOR', :es_global, 'admin')
+            RETURNING id, maquina_id, fecha_inicio, fecha_fin,
+                      horas_disponibles, estado, es_global
+        """), {
+            "maquina_id":       maquina_id,
+            "fecha_inicio":     fecha_inicio,
+            "fecha_fin":        fecha_fin,
+            "horas_disponibles": horas_disponibles,
+            "es_global":        es_global,
+        })
+        await db.commit()
+        row = result.mappings().one()
+        return dict(row)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Error interno: {str(e)}")
 
 @router.get("/activa")
 async def obtener_semana_activa(db: AsyncSession = Depends(get_session)):

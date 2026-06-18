@@ -11,8 +11,12 @@ class SemanaProgramacionBase(BaseModel):
     es_global: bool = False
     created_by: Optional[str] = None
 
-class SemanaProgramacionCreate(SemanaProgramacionBase):
-    pass
+class SemanaProgramacionCreate(BaseModel):
+    fecha_inicio: date
+    fecha_fin: date
+    maquina_id: Optional[int] = None
+    es_global: bool = True
+    horas_disponibles: Optional[float] = None
 
 class SemanaProgramacionUpdate(BaseModel):
     maquina_id: Optional[int] = None
