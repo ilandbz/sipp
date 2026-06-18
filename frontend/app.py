@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 from utils.api_client import (
-    get_kpi_semanal, get_cola_maquina, get_maquinas,
+    get_kpi_por_semana_id, get_cola_maquina, get_maquinas,
     ejecutar_optimizador, get_semanas, get_icc_matrix
 )
 from auth import restaurar_sesion, is_logged_in, login, logout, get_rol, can, render_sidebar
@@ -175,12 +175,17 @@ if maquinas is None:
     st.error("⚠ Backend no disponible. Verifique que FastAPI esté corriendo en localhost:8000")
     st.stop()
 
-# Cargar KPIs (si el endpoint no existe o retorna 404/None, se usa una lista vacía)
+# Cargar KPIs
 if semana_sel:
-    kpis_raw = get_kpi_semanal(semana_id=semana_sel)
-    kpis = kpis_raw if kpis_raw is not None else []
+    kpi_data = get_kpi_por_semana_id(semana_sel)
+    if kpi_data:
+        total_ofs    = kpi_data.get("total_ofs", 0)
+        setup_horas  = kpi_data.get("setup_total_horas", 0.0)
+        utilizacion  = kpi_data.get("utilizacion_pct", 0.0)
+    else:
+        total_ofs, setup_horas, utilizacion = 0, 0.0, 0.0
 else:
-    kpis = []
+    total_ofs, setup_horas, utilizacion = 0, 0.0, 0.0
 
 # ── KPIs (fila superior) ──────────────────────────────────
 if isinstance(semanas_opciones, list):
@@ -258,12 +263,6 @@ st.markdown("""
 
 col1, col2, col3, col4 = st.columns(4)
 
-total_ofs = sum(k.get("total_ordenes", 0) for k in kpis)
-setup_horas = sum(k.get("setup_total_horas", 0.0) or 0.0 for k in kpis)
-utilizacion = 0.0
-if kpis:
-    utilizacion = sum(k.get("utilizacion_pct", 0.0) or 0.0 for k in kpis) / len(kpis)
-
 with col1:
     st.markdown(f"""<div class="kpi-card">
         <div class="kpi-valor">{total_ofs}</div>
@@ -319,12 +318,34 @@ with col_cola:
             if not maquinas_tabs:
                 st.warning("Máquina no encontrada.")
             else:
-                tabs = st.tabs([m["codigo"] for m in maquinas_tabs])
+                maquinas_con_ofs = []
+                todas_las_colas = {}
+                for maq in maquinas_tabs:
+                    cola = get_cola_maquina(maq["id"], semana_id=semana_sel) or []
+                    todas_las_colas[maq["codigo"]] = cola
+                    if cola:
+                        maquinas_con_ofs.append(maq["codigo"])
+
+                # Labels con indicador de cuántas OFs tiene cada máquina
+                tab_labels = []
+                for maq in maquinas_tabs:
+                    cola = todas_las_colas.get(maq["codigo"], [])
+                    n = len(cola)
+                    if n > 0:
+                        tab_labels.append(f"{maq['codigo']} ({n} OFs)")
+                    else:
+                        tab_labels.append(maq["codigo"])
+
+                tabs = st.tabs(tab_labels)
+
                 for tab, maq in zip(tabs, maquinas_tabs):
                     with tab:
-                        cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
+                        cola = todas_las_colas.get(maq["codigo"], [])
                         if not cola:
-                            st.info("Sin órdenes programadas para esta semana/máquina.")
+                            if maq["codigo"] in maquinas_con_ofs:
+                                st.info(f"Sin órdenes en {maq['codigo']} esta semana")
+                            else:
+                                st.caption(f"🔘 {maq['codigo']} sin órdenes esta semana")
                         else:
                             _render_tabla_cola(cola)
 

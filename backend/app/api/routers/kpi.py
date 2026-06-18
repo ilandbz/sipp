@@ -8,6 +8,39 @@ from app.schemas.kpi import KpiSemanalRead, IccMatrixResponse, PlanSemanalRead
 
 router = APIRouter(prefix="/kpi", tags=["KPIs"])
 
+@router.get("/semana/{semana_id}")
+async def kpi_por_semana(semana_id: int,
+                         db: AsyncSession = Depends(get_session)):
+    result = await db.execute(text("""
+        SELECT
+            COUNT(sp.id)                                    AS total_ofs,
+            COALESCE(SUM(sp.costo_setup_min), 0)           AS setup_total_min,
+            ROUND(COALESCE(SUM(sp.costo_setup_min),0)/60,2) AS setup_total_horas,
+            COALESCE(SUM(of.horas_produccion), 0)          AS horas_produccion,
+            s.horas_disponibles,
+            CASE WHEN s.horas_disponibles > 0
+                 THEN ROUND(
+                     (COALESCE(SUM(of.horas_produccion),0) +
+                      COALESCE(SUM(sp.costo_setup_min),0)/60)
+                     / s.horas_disponibles * 100, 1)
+                 ELSE 0 END                                 AS utilizacion_pct,
+            s.estado,
+            s.es_global,
+            s.fecha_inicio,
+            s.fecha_fin
+        FROM sipp.semanas_programacion s
+        LEFT JOIN sipp.secuencias_produccion sp ON sp.semana_id = s.id
+        LEFT JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+        WHERE s.id = :semana_id
+        GROUP BY s.id, s.horas_disponibles, s.estado,
+                 s.es_global, s.fecha_inicio, s.fecha_fin
+    """), {"semana_id": semana_id})
+    
+    row = result.mappings().one_or_none()
+    if not row:
+        return {"total_ofs": 0, "setup_total_horas": 0, "utilizacion_pct": 0}
+    return dict(row)
+
 @router.get("/semanal", response_model=List[KpiSemanalRead])
 async def kpi_semanal(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
     query = "SELECT k.* FROM sipp.v_kpi_semanal k"

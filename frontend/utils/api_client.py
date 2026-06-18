@@ -317,6 +317,9 @@ def get_kpi_semanal(semana: str = None, semana_id: int = None):
         params["semana"] = semana
     return _get("/api/v1/kpi/semanal", params)
 
+def get_kpi_por_semana_id(semana_id: int):
+    return _get(f"/api/v1/kpi/semana/{semana_id}")
+
 def get_cola_maquina(maquina_id: int, semana: str = None, semana_id: int = None):
     params = {}
     if semana_id:
