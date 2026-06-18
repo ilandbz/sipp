@@ -30,52 +30,56 @@ with col_crear:
         if "semana_creada_msg" in st.session_state:
             st.success(st.session_state.pop("semana_creada_msg"))
         
-        # Crear mapeo de opciones de maquina
-        maq_opciones = {m["codigo"]: m["id"] for m in maquinas if m.get("activa")}
-        
-        if not maq_opciones:
-            st.warning("No hay máquinas activas disponibles.")
+        # Semana global activada por defecto
+        es_global = st.checkbox(
+            "🌐 Semana Global (todas las máquinas)",
+            value=True,  # MARCADO POR DEFECTO
+            help="Recomendado: una semana para M8, M10 y M14 juntas. "
+                 "El optimizador asigna cada OF a la mejor máquina."
+        )
+
+        if es_global:
+            st.info("✓ Se creará una semana para M8, M10 y M14. "
+                    "Horas disponibles: 5 días × 8h × 3 máquinas = 120h")
+            maquina_id = None
         else:
-            es_global = st.checkbox("Crear Semana Global (Todas las máquinas)", value=False)
-            with st.form("form_nueva_semana"):
-                if es_global:
-                    st.info("Se creará una semana para M8, M10 y M14 juntas. "
-                            "El optimizador asignará cada OF a la mejor máquina.")
-                    maq_sel = None
+            # Solo mostrar selector de máquina si NO es global
+            st.warning("Modo específico: solo una máquina en esta semana.")
+            maq_opciones = {m["codigo"]: m["id"] for m in maquinas 
+                           if m["codigo"] in ["M8","M10","M14"]}
+            maq_sel = st.selectbox("Máquina", list(maq_opciones.keys()))
+            maquina_id = maq_opciones.get(maq_sel)
+
+        c1, c2 = st.columns(2)
+        from datetime import date, timedelta
+        hoy = date.today()
+        lunes = hoy - timedelta(days=hoy.weekday())
+        viernes = lunes + timedelta(days=4)
+
+        fecha_inicio = c1.date_input("Fecha de inicio *", value=lunes)
+        fecha_fin    = c2.date_input("Fecha de fin *",    value=viernes)
+
+        if st.button("📅 Crear Semana", type="primary", 
+                     use_container_width=True):
+            if fecha_fin <= fecha_inicio:
+                st.error("La fecha de fin debe ser posterior al inicio")
+            else:
+                payload = {
+                    "es_global":    es_global,
+                    "maquina_id":   maquina_id,
+                    "fecha_inicio": str(fecha_inicio),
+                    "fecha_fin":    str(fecha_fin),
+                }
+                resultado = crear_semana(payload)
+                if resultado:
+                    dias = sum(1 for i in range((fecha_fin-fecha_inicio).days+1)
+                              if (fecha_inicio+timedelta(days=i)).weekday()<5)
+                    horas = dias * 8 * (3 if es_global else 1)
+                    st.cache_data.clear()
+                    st.session_state["semana_creada_msg"] = f"✓ Semana {'global' if es_global else maq_sel} creada — {dias} días hábiles = {horas}h disponibles"
+                    st.rerun()
                 else:
-                    maq_sel = st.selectbox("Máquina", list(maq_opciones.keys()))
-                    
-                fecha_inicio = st.date_input("Fecha de inicio *", value=datetime.date.today())
-                fecha_fin = st.date_input("Fecha de fin *", value=datetime.date.today() + datetime.timedelta(days=4))
-                
-                submitted = st.form_submit_button("Crear Semana", type="primary", use_container_width=True)
-                
-                if submitted:
-                    if fecha_inicio > fecha_fin:
-                        st.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
-                    else:
-                        dias_habiles = 0
-                        curr = fecha_inicio
-                        while curr <= fecha_fin:
-                            if curr.weekday() < 5:
-                                dias_habiles += 1
-                            curr += datetime.timedelta(days=1)
-                        
-                        horas_disp_calc = dias_habiles * 8.0
-                        if es_global:
-                            horas_disp_calc *= 3
-                        
-                        payload = {
-                            "maquina_id": maq_opciones[maq_sel] if not es_global and maq_sel else None,
-                            "fecha_inicio": str(fecha_inicio),
-                            "fecha_fin": str(fecha_fin),
-                            "es_global": es_global
-                        }
-                        res = crear_semana(payload)
-                        if res:
-                            st.cache_data.clear()
-                            st.session_state["semana_creada_msg"] = f"Semana creada: {dias_habiles} días hábiles = {horas_disp_calc:.1f} horas disponibles"
-                            st.rerun()
+                    st.error("Error al crear la semana")
     else:
         st.info("No tienes permisos para crear nuevas semanas.")
 
