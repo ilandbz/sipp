@@ -95,3 +95,85 @@ async def sugerir_maquina_logica(of_id: int, db) -> list[dict]:
         ranking[0]["recomendada"] = True
         
     return ranking
+
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+async def sugerir_maquina(db: AsyncSession, of_id: int) -> list[dict]:
+    from sqlalchemy import text
+    
+    # Cargar la OF
+    result = await db.execute(
+        text("SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"),
+        {"id": of_id}
+    )
+    of = result.mappings().one_or_none()
+    if not of:
+        return []
+    
+    # Cargar máquinas activas
+    result2 = await db.execute(
+        text("SELECT * FROM sipp.maquinas WHERE activa = TRUE AND codigo IN ('M8','M10','M14')")
+    )
+    maquinas = result2.mappings().all()
+    
+    ranking = []
+    for maq in maquinas:
+        # Calcular carga actual
+        result3 = await db.execute(text("""
+            SELECT COALESCE(SUM(of2.horas_produccion), 0) as horas_usadas
+            FROM sipp.secuencias_produccion sp
+            JOIN sipp.semanas_programacion s ON s.id = sp.semana_id
+            JOIN sipp.ordenes_fabricacion of2 ON of2.id = sp.orden_fabricacion_id
+            WHERE s.estado = 'EN_EJECUCION'
+            AND of2.maquina_asignada_id = :maq_id
+            AND sp.estado != 'COMPLETADA'
+        """), {"maq_id": maq["id"]})
+        horas_usadas = float(result3.scalar() or 0)
+        carga_pct = min(100.0, (horas_usadas / 40.0) * 100)
+        
+        # Cargar último estado de la máquina
+        result4 = await db.execute(text("""
+            SELECT * FROM sipp.ultimo_estado_maquina 
+            WHERE maquina_id = :maq_id
+        """), {"maq_id": maq["id"]})
+        ultimo = result4.mappings().one_or_none()
+        
+        # Calcular ICC con último estado
+        icc = 50.0  # default si no hay último estado
+        if ultimo and ultimo.get("ultima_of_id"):
+            result5 = await db.execute(
+                text("SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"),
+                {"id": ultimo["ultima_of_id"]}
+            )
+            ultima_of = result5.mappings().one_or_none()
+            if ultima_of:
+                penalizaciones = {
+                    "CAMBIO_FORMATO_MEDIDA_COMPLETA": 480,
+                    "CAMBIO_COLOR_LAVADO_ESTACION": 45,
+                    "CAMBIO_CLISE": 17.5,
+                    "CAMBIO_CILINDRO_IMPRESION": 30,
+                    "CAMBIO_MATERIAL": 25,
+                }
+                setup_min, _ = calcular_costo_cambio(
+                    ultima_of, of, penalizaciones
+                )
+                icc = calcular_icc(setup_min)
+        
+        score = (100 - carga_pct) * 0.4 + icc * 0.6
+        ranking.append({
+            "maquina_id": maq["id"],
+            "codigo": maq["codigo"],
+            "nombre": maq["nombre"],
+            "score": round(score, 1),
+            "carga_pct": round(carga_pct, 1),
+            "icc": round(icc, 1),
+            "horas_usadas": round(horas_usadas, 2),
+            "recomendada": False
+        })
+    
+    # Marcar la mejor
+    if ranking:
+        ranking.sort(key=lambda x: x["score"], reverse=True)
+        ranking[0]["recomendada"] = True
+    
+    return ranking
