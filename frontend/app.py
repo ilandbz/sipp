@@ -101,8 +101,50 @@ def render_matriz_icc(semana: str = None, semana_id: int = None):
     styled = df.style.map(colorear_icc).format(precision=0)
     st.dataframe(styled, width='stretch')
 
+def _render_tabla_cola(cola):
+    df = pd.DataFrame(cola)
+    
+    def badge(estado: str) -> str:
+        colores = {
+            "PENDIENTE": "🔘",
+            "EN_PROCESO": "🔵",
+            "COMPLETADA": "🟢",
+            "OMITIDA": "⚫",
+        }
+        return f"{colores.get(estado, '⚪')} {estado}"
+    
+    if "estado_secuencia" in df.columns:
+        df["estado"] = df["estado_secuencia"].apply(badge)
+    else:
+        df["estado"] = "⚪ PENDIENTE"
+        
+    st.dataframe(
+        df[["posicion", "codigo_of", "medida_texto", "material",
+            "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]],
+        column_config={
+            "posicion": st.column_config.NumberColumn("#", width="small"),
+            "codigo_of": st.column_config.TextColumn("OF"),
+            "medida_texto": st.column_config.TextColumn("Medida"),
+            "material": st.column_config.TextColumn("Material"),
+            "colores_detalle": st.column_config.TextColumn("Colores"),
+            "costo_setup_min": st.column_config.NumberColumn("Setup (min)", format="%.0f"),
+            "fecha_entrega": st.column_config.DateColumn("F. Entrega"),
+            "estado": st.column_config.TextColumn("Estado"),
+        },
+        hide_index=True,
+        width='stretch',
+    )
+
 # ── Sidebar ──────────────────────────────────────────────
 semanas_opciones = opciones_semanas()
+
+if "semana_defecto_seteada" not in st.session_state:
+    from utils.api_client import get_semana_activa
+    semana_activa = get_semana_activa()
+    if semana_activa:
+        st.session_state["semana_defecto"] = semana_activa["id"]
+    st.session_state["semana_defecto_seteada"] = True
+
 semana_sel = render_sidebar(semanas_opciones)
 
 # Verificar disponibilidad del backend (usando el endpoint de maquinas que ya funciona)
@@ -171,54 +213,44 @@ with col_cola:
     if not maquinas:
         st.info("No hay máquinas registradas.")
     else:
-        maquinas_objetivo = ["M8", "M10", "M14"]
-        tabs = st.tabs(maquinas_objetivo)
-        for tab, maq_code in zip(tabs, maquinas_objetivo):
-            with tab:
-                maq = next((m for m in maquinas if m["codigo"] == maq_code), None)
-                if not maq:
-                    st.warning(f"Máquina {maq_code} no disponible.")
-                    continue
-                if semana_sel:
-                    cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
+        from utils.api_client import get_semana_detalle
+        semana_data = get_semana_detalle(semana_sel) if semana_sel else None
+        
+        if not semana_data:
+            st.info("Sin órdenes programadas para esta semana.")
+        else:
+            semana = semana_data.get("semana", {})
+            es_global = semana.get("es_global", False)
+            
+            if es_global:
+                st.markdown(f"#### Semana global — {semana.get('fecha_inicio', '')} al {semana.get('fecha_fin', '')}")
+                maquinas_objetivo = [m for m in maquinas if m["codigo"] in ["M8", "M10", "M14"]]
+                tabs = st.tabs([m["codigo"] for m in maquinas_objetivo])
+                
+                for tab, maq in zip(tabs, maquinas_objetivo):
+                    with tab:
+                        cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
+                        if not cola:
+                            st.info("Sin órdenes programadas para esta máquina.")
+                        else:
+                            _render_tabla_cola(cola)
+            else:
+                maquina_codigo = semana.get("maquina_codigo")
+                if not maquina_codigo or maquina_codigo == "Todas las máquinas" or maquina_codigo == "GLOBAL":
+                    maquina_codigo = "M8" 
+                
+                maq = next((m for m in maquinas if m["codigo"] == maquina_codigo), None)
+                if maq:
+                    st.markdown(f"#### Máquina: {maquina_codigo}")
+                    tabs = st.tabs([maquina_codigo])
+                    with tabs[0]:
+                        cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
+                        if not cola:
+                            st.info("Sin órdenes programadas para esta semana.")
+                        else:
+                            _render_tabla_cola(cola)
                 else:
-                    cola = []
-                if not cola:
-                    st.info("Sin órdenes programadas para esta semana.")
-                    continue
-                
-                df = pd.DataFrame(cola)
-                
-                def badge(estado: str) -> str:
-                    colores = {
-                        "PENDIENTE": "🔘",
-                        "EN_PROCESO": "🔵",
-                        "COMPLETADA": "🟢",
-                        "OMITIDA": "⚫",
-                    }
-                    return f"{colores.get(estado, '⚪')} {estado}"
-                
-                if "estado_secuencia" in df.columns:
-                    df["estado"] = df["estado_secuencia"].apply(badge)
-                else:
-                    df["estado"] = "⚪ PENDIENTE"
-                    
-                st.dataframe(
-                    df[["posicion", "codigo_of", "medida_texto", "material",
-                        "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]],
-                    column_config={
-                        "posicion": st.column_config.NumberColumn("#", width="small"),
-                        "codigo_of": st.column_config.TextColumn("OF"),
-                        "medida_texto": st.column_config.TextColumn("Medida"),
-                        "material": st.column_config.TextColumn("Material"),
-                        "colores_detalle": st.column_config.TextColumn("Colores"),
-                        "costo_setup_min": st.column_config.NumberColumn("Setup (min)", format="%.0f"),
-                        "fecha_entrega": st.column_config.DateColumn("F. Entrega"),
-                        "estado": st.column_config.TextColumn("Estado"),
-                    },
-                    hide_index=True,
-                    width='stretch',
-                )
+                    st.warning("Máquina no encontrada.")
 
 with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")

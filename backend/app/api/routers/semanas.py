@@ -35,7 +35,7 @@ async def listar_semanas(db: AsyncSession = Depends(get_session)):
         sem = row[0]
         sem_data = sem.model_dump()
         if sem.es_global:
-            sem_data["maquina_codigo"] = "Todas las máquinas"
+            sem_data["maquina_codigo"] = "GLOBAL"
         else:
             sem_data["maquina_codigo"] = row[1]
         semanas_read.append(SemanaProgramacionRead(**sem_data))
@@ -96,13 +96,13 @@ async def crear_semana(body: SemanaProgramacionCreate, db: AsyncSession = Depend
     await db.commit()
     
     sem_data = semana.model_dump()
-    sem_data["maquina_codigo"] = "Todas las máquinas" if body.es_global else maquina.codigo
+    sem_data["maquina_codigo"] = "GLOBAL" if body.es_global else maquina.codigo
     return SemanaProgramacionRead(**sem_data)
 
 @router.get("/activa")
 async def obtener_semana_activa(db: AsyncSession = Depends(get_session)):
     stmt = select(SemanaProgramacion).where(
-        SemanaProgramacion.estado == 'EN_EJECUCION'
+        SemanaProgramacion.estado.in_(['BORRADOR','EN_EJECUCION','CONFIRMADA'])
     ).order_by(SemanaProgramacion.fecha_inicio.desc()).limit(1)
     res = await db.execute(stmt)
     semana = res.scalars().first()
@@ -112,7 +112,7 @@ async def obtener_semana_activa(db: AsyncSession = Depends(get_session)):
         
     sem_data = semana.model_dump()
     if semana.es_global:
-        sem_data["maquina_codigo"] = "Todas las máquinas"
+        sem_data["maquina_codigo"] = "GLOBAL"
     else:
         maquina = await db.get(Maquina, semana.maquina_id)
         sem_data["maquina_codigo"] = maquina.codigo if maquina else None
@@ -233,10 +233,10 @@ async def agregar_of(
         if not of:
             raise HTTPException(404, "Orden de fabricación no encontrada")
             
-        # Asignar máquina automáticamente si no la tiene
-        if not of.maquina_asignada_id:
-            from app.api.routers.ordenes import sugerir_maquina_logica
-            sugerencias = await sugerir_maquina_logica(of.id, db)
+        # Asignar máquina automáticamente si no la tiene y la semana es global
+        if semana.es_global and not of.maquina_asignada_id:
+            from app.services.asignador import sugerir_maquina
+            sugerencias = await sugerir_maquina(db, of.id)
             if sugerencias:
                 mejor_maq_id = sugerencias[0]["maquina_id"]
                 of.maquina_asignada_id = mejor_maq_id

@@ -36,9 +36,15 @@ with col_crear:
         if not maq_opciones:
             st.warning("No hay máquinas activas disponibles.")
         else:
+            es_global = st.checkbox("Crear Semana Global (Todas las máquinas)", value=False)
             with st.form("form_nueva_semana"):
-                es_global = st.checkbox("Crear Semana Global (Todas las máquinas)", value=False)
-                maq_sel = st.selectbox("Máquina (solo si NO es global)", list(maq_opciones.keys()))
+                if es_global:
+                    st.info("Se creará una semana para M8, M10 y M14 juntas. "
+                            "El optimizador asignará cada OF a la mejor máquina.")
+                    maq_sel = None
+                else:
+                    maq_sel = st.selectbox("Máquina", list(maq_opciones.keys()))
+                    
                 fecha_inicio = st.date_input("Fecha de inicio *", value=datetime.date.today())
                 fecha_fin = st.date_input("Fecha de fin *", value=datetime.date.today() + datetime.timedelta(days=4))
                 
@@ -60,7 +66,7 @@ with col_crear:
                             horas_disp_calc *= 3
                         
                         payload = {
-                            "maquina_id": maq_opciones[maq_sel] if not es_global else None,
+                            "maquina_id": maq_opciones[maq_sel] if not es_global and maq_sel else None,
                             "fecha_inicio": str(fecha_inicio),
                             "fecha_fin": str(fecha_fin),
                             "es_global": es_global
@@ -106,7 +112,7 @@ with col_lista:
         for semana in semanas:
             col1, col2, col3, col4, col5, col6 = st.columns([1, 2, 2, 2, 2, 3])
             col1.write(semana["id"])
-            maq_cod = semana["maquina_codigo"] or f"ID: {semana['maquina_id']}"
+            maq_cod = "🌐 Todas las máquinas" if semana.get("es_global") else (semana["maquina_codigo"] or f"ID: {semana.get('maquina_id', '')}")
             col2.write(maq_cod)
             col3.write(datetime.datetime.strptime(semana["fecha_inicio"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_inicio") else "")
             col4.write(datetime.datetime.strptime(semana["fecha_fin"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_fin") else "")

@@ -141,9 +141,19 @@ def render_sidebar(opciones_semanas: list = None) -> str | None:
             st.info("No hay semanas programadas aún")
             semana_sel = None
         else:
+            default_idx = 0
+            keys_list = list(opciones_semanas.keys())
+            if "semana_defecto" in st.session_state and st.session_state["semana_defecto"] in opciones_semanas.values():
+                val = st.session_state["semana_defecto"]
+                for i, k in enumerate(keys_list):
+                    if opciones_semanas[k] == val:
+                        default_idx = i
+                        break
+            
             etiqueta_sel = st.selectbox(
                 "Semana", 
-                list(opciones_semanas.keys()), 
+                keys_list, 
+                index=default_idx,
                 label_visibility="collapsed",
                 key="semana_selector",
                 help="Selecciona una semana de programación registrada"
