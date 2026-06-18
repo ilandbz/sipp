@@ -115,6 +115,12 @@ def render_sidebar(opciones_semanas: list = None) -> str | None:
     logo = Path(__file__).parent / "static" / "logo_vygpack.png"
     if logo.exists():
         st.image(str(logo), width=150)
+        
+    BOLSA_IMG = "https://www.vygpack.pe/wp-content/uploads/2023/06/ICONO-Bolsa-Base-N°26-Kraft-sin-impresion-color.webp"
+    try:
+        st.image(BOLSA_IMG, width=80, caption="Bolsas Base Cuadrada")
+    except:
+        pass
     
     st.markdown("### SIPP - VYGPACK")
     

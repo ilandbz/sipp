@@ -19,6 +19,13 @@ restaurar_sesion()
 
 # Si no está logueado → mostrar login
 if not is_logged_in():
+    st.markdown("""
+    <style>
+    [data-testid="stApp"] {
+        background: linear-gradient(135deg, #0f1923 0%, #1a2e1a 100%);
+    }
+    </style>
+    """, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         st.markdown("---")
@@ -105,36 +112,50 @@ def render_matriz_icc(semana: str = None, semana_id: int = None):
 def _render_tabla_cola(cola):
     df = pd.DataFrame(cola)
     
-    def badge(estado: str) -> str:
-        colores = {
-            "PENDIENTE": "🔘",
-            "EN_PROCESO": "🔵",
-            "COMPLETADA": "🟢",
-            "OMITIDA": "⚫",
+    def badge_estado(estado: str) -> str:
+        estilos = {
+            "PENDIENTE":  ("⚪", "#607D8B", "#E0F2F1"),
+            "EN_PROCESO": ("🔵", "#1565C0", "#E3F2FD"),
+            "COMPLETADA": ("✅", "#2E7D32", "#E8F5E9"),
+            "OMITIDA":    ("⚫", "#424242", "#F5F5F5"),
         }
-        return f"{colores.get(estado, '⚪')} {estado}"
+        icono, color_txt, color_bg = estilos.get(estado, ("⚪", "#607D8B", "#E0F2F1"))
+        return f'<span style="background:{color_bg}20; color:{color_txt}; padding:2px 8px; border-radius:12px; font-size:11px; border:1px solid {color_txt}40;">{icono} {estado}</span>'
     
     if "estado_secuencia" in df.columns:
-        df["estado"] = df["estado_secuencia"].apply(badge)
+        df["estado"] = df["estado_secuencia"].apply(badge_estado)
     else:
-        df["estado"] = "⚪ PENDIENTE"
+        df["estado"] = badge_estado("PENDIENTE")
         
-    st.dataframe(
-        df[["posicion", "codigo_of", "medida_texto", "material",
-            "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]],
-        column_config={
-            "posicion": st.column_config.NumberColumn("#", width="small"),
-            "codigo_of": st.column_config.TextColumn("OF"),
-            "medida_texto": st.column_config.TextColumn("Medida"),
-            "material": st.column_config.TextColumn("Material"),
-            "colores_detalle": st.column_config.TextColumn("Colores"),
-            "costo_setup_min": st.column_config.NumberColumn("Setup (min)", format="%.0f"),
-            "fecha_entrega": st.column_config.DateColumn("F. Entrega"),
-            "estado": st.column_config.TextColumn("Estado"),
-        },
-        hide_index=True,
-        width='stretch',
-    )
+    def color_setup_fila(setup_min: float) -> str:
+        if setup_min == 0:
+            return ""  # sin color
+        elif setup_min >= 480:
+            return "background-color: rgba(239,83,80,0.15);"   # rojo suave
+        elif setup_min >= 105:
+            return "background-color: rgba(255,167,38,0.15);"  # naranja suave
+        elif setup_min >= 45:
+            return "background-color: rgba(255,238,88,0.10);"  # amarillo suave
+        else:
+            return "background-color: rgba(76,175,80,0.10);"   # verde suave
+
+    def row_style(row):
+        color = color_setup_fila(float(row.get("costo_setup_min", 0)))
+        return [color] * len(row)
+
+    df_show = df[["posicion", "codigo_of", "medida_texto", "material",
+                  "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]]
+    
+    styled_df = df_show.style.apply(row_style, axis=1)
+    
+    st.write(styled_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    
+    st.caption("""
+        🟢 Verde: setup ≤ 44 min (cambio menor) |
+        🟡 Amarillo: 45-104 min (cambio de color/material) |
+        🟠 Naranja: 105-479 min (jugada corta) |
+        🔴 Rojo: ≥ 480 min (cambio de formato completo)
+    """)
 
 # ── Sidebar ──────────────────────────────────────────────
 semanas_opciones = opciones_semanas()
@@ -180,7 +201,34 @@ else:
         if id_ == semana_sel:
             semana_label = label
             break
-    st.subheader(f"Semana en curso: {semana_label}")
+    semana_info = st.session_state.get("semana_info", {})
+    fecha_i = semana_info.get("fecha_inicio", "")
+    fecha_f = semana_info.get("fecha_fin", "")
+
+    if fecha_i and fecha_f:
+        try:
+            from datetime import datetime
+            fi = datetime.strptime(str(fecha_i)[:10], "%Y-%m-%d").strftime("%d/%m")
+            ff = datetime.strptime(str(fecha_f)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            titulo_semana = f"Semana {fi} — {ff}"
+        except:
+            titulo_semana = "Semana en curso"
+    else:
+        titulo_semana = semana_label
+
+    st.markdown(f"""
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+        <span style="font-size:2rem;">🏭</span>
+        <div>
+            <div style="font-size:1.4rem; font-weight:600; color:#F0F4F0;">
+                {titulo_semana}
+            </div>
+            <div style="font-size:0.8rem; color:#4CAF50;">
+                VYGPACK — Sistema Inteligente de Programación de Producción
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 if get_rol() in ["PROGRAMADOR", "JEFE_PRODUCCION"]:
     st.info(
@@ -191,6 +239,23 @@ if get_rol() in ["PROGRAMADOR", "JEFE_PRODUCCION"]:
 
 if "optimizer_success_msg" in st.session_state:
     st.success(st.session_state.pop("optimizer_success_msg"))
+# Fila de KPIs con estilo mejorado
+st.markdown("""
+<style>
+.kpi-card {
+    background: linear-gradient(135deg, #1a2632 0%, #243447 100%);
+    border: 1px solid #2d4a3e;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+}
+.kpi-valor { font-size: 2rem; font-weight: 700; color: #4CAF50; }
+.kpi-label { font-size: 0.75rem; color: #8a9ba8; text-transform: uppercase; 
+             letter-spacing: 0.05em; margin-top: 4px; }
+.kpi-delta { font-size: 0.8rem; color: #81C784; }
+</style>
+""", unsafe_allow_html=True)
+
 col1, col2, col3, col4 = st.columns(4)
 
 total_ofs = sum(k.get("total_ordenes", 0) for k in kpis)
@@ -199,10 +264,28 @@ utilizacion = 0.0
 if kpis:
     utilizacion = sum(k.get("utilizacion_pct", 0.0) or 0.0 for k in kpis) / len(kpis)
 
-col1.metric("Total OFs programadas", total_ofs)
-col2.metric("Setup total (h)", f"{setup_horas:.1f} h")
-col3.metric("Utilización promedio", f"{utilizacion:.1f} %")
-col4.metric("Máquinas activas", len([m for m in maquinas if m.get("activa")]))
+with col1:
+    st.markdown(f"""<div class="kpi-card">
+        <div class="kpi-valor">{total_ofs}</div>
+        <div class="kpi-label">📦 OFs Programadas</div>
+    </div>""", unsafe_allow_html=True)
+with col2:
+    color_setup = "#ef5350" if setup_horas > 20 else "#FFA726" if setup_horas > 10 else "#4CAF50"
+    st.markdown(f"""<div class="kpi-card">
+        <div class="kpi-valor" style="color:{color_setup}">{setup_horas:.1f}h</div>
+        <div class="kpi-label">⏱ Setup Total</div>
+    </div>""", unsafe_allow_html=True)
+with col3:
+    color_util = "#ef5350" if utilizacion > 100 else "#FFA726" if utilizacion > 85 else "#4CAF50"
+    st.markdown(f"""<div class="kpi-card">
+        <div class="kpi-valor" style="color:{color_util}">{utilizacion:.1f}%</div>
+        <div class="kpi-label">📊 Utilización</div>
+    </div>""", unsafe_allow_html=True)
+with col4:
+    st.markdown(f"""<div class="kpi-card">
+        <div class="kpi-valor">3</div>
+        <div class="kpi-label">🏭 Máquinas M8·M10·M14</div>
+    </div>""", unsafe_allow_html=True)
 
 st.divider()
 
