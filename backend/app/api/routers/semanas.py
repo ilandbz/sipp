@@ -365,29 +365,50 @@ async def reordenar_semana(semana_id: int, body: ReordenarRequest, db: AsyncSess
     return {"status": "ok", "message": "Secuencia reordenada correctamente"}
 
 @router.delete("/{id}")
-async def eliminar_semana(id: int, db: AsyncSession = Depends(get_session)):
-    semana = await db.get(SemanaProgramacion, id)
-    if not semana:
-        raise HTTPException(status_code=404, detail="Semana no encontrada")
+async def eliminar_semana(id: int,
+                          db: AsyncSession = Depends(get_session)):
+    try:
+        from sqlalchemy import text
         
-    if semana.estado != "BORRADOR":
-        raise HTTPException(status_code=400, detail="Solo se pueden eliminar semanas en estado BORRADOR")
+        result = await db.execute(text(
+            "SELECT id, estado, es_global FROM sipp.semanas_programacion WHERE id = :id"
+        ), {"id": id})
+        semana = result.mappings().one_or_none()
         
-    # Restaurar OFs a PENDIENTE
-    stmt_update = text("""
-        UPDATE sipp.ordenes_fabricacion SET estado = 'PENDIENTE'
-        WHERE id IN (
-            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion WHERE semana_id = :semana_id
-        )
-    """)
-    await db.execute(stmt_update, {"semana_id": id})
-    
-    # Eliminar secuencias
-    stmt_delete = text("DELETE FROM sipp.secuencias_produccion WHERE semana_id = :semana_id")
-    await db.execute(stmt_delete, {"semana_id": id})
-    
-    # Eliminar semana
-    await db.delete(semana)
-    await db.commit()
-    
-    return {"mensaje": "Semana eliminada correctamente"}
+        if not semana:
+            raise HTTPException(404, "Semana no encontrada")
+        
+        if semana["estado"] != "BORRADOR":
+            raise HTTPException(400,
+                f"Solo se pueden eliminar semanas en estado BORRADOR. "
+                f"Esta semana está en estado: {semana['estado']}")
+        
+        # Restaurar OFs a PENDIENTE
+        await db.execute(text("""
+            UPDATE sipp.ordenes_fabricacion
+            SET estado = 'PENDIENTE', updated_at = NOW()
+            WHERE id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+        """), {"id": id})
+        
+        # Eliminar secuencias
+        await db.execute(text(
+            "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
+        ), {"id": id})
+        
+        # Eliminar semana
+        await db.execute(text(
+            "DELETE FROM sipp.semanas_programacion WHERE id = :id"
+        ), {"id": id})
+        
+        await db.commit()
+        return {"ok": True, "mensaje": "Semana eliminada correctamente"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Error: {str(e)}")

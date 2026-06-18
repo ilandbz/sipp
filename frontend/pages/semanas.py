@@ -140,13 +140,14 @@ with col_lista:
                     if st.button("✅ Sí, eliminar", key=f"confirm_si_{semana['id']}", type="primary"):
                         from utils.api_client import eliminar_semana
                         resultado = eliminar_semana(semana['id'])
-                        if resultado:
-                            st.success("Semana eliminada")
+                        if resultado and resultado.get("ok"):
+                            st.success("✓ Semana eliminada. Las OFs volvieron a estado PENDIENTE.")
                             st.session_state.pop(f"confirmar_del_{semana['id']}", None)
                             st.cache_data.clear()
                             st.rerun()
                         else:
-                            st.error("Error al eliminar")
+                            error = resultado.get("error", "Error") if resultado else "Sin respuesta"
+                            st.error(f"❌ {error}")
                 with col_no:
                     if st.button("❌ Cancelar", key=f"confirm_no_{semana['id']}"):
                         st.session_state.pop(f"confirmar_del_{semana['id']}", None)
