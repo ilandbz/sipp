@@ -207,7 +207,7 @@ python -m app.management.seed_inicial --archivo="../data/PROGRAMACIÓN_ABRIL.csv
 
 | CSV | Campo BD | Nota |
 |---|---|---|
-| `MAQ` | `maquina_asignada_id` | lookup por código |
+| `MAQ` | `maquina_asignada_id` | lookup por código (ahora OPCIONAL, puede ser nulo para que el optimizador la asigne) |
 | `Orden de Fabricación` | `codigo_of` | `.strip()` obligatorio |
 | `Código PT` | `codigo_pt` | |
 | `Descricpción` | `descripcion` | errata en el CSV — así está escrito |

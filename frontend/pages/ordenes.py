@@ -222,7 +222,9 @@ def _formulario_of(of_existente: dict = None):
     es_ed = of_existente is not None
     
     # Mapeos de catálogos
-    maq_opciones = {m["codigo"]: m["id"] for m in maquinas}
+    maq_opciones = {"Automático (Optimizador)": None}
+    for m in maquinas:
+        maq_opciones[m["codigo"]] = m["id"]
     cli_opciones = {c["razon_social"]: c["id"] for c in clientes}
     mat_opciones = {m["tipo"]: m["id"] for m in materiales}
     cil_opciones = {str(c["codigo"]): c["id"] for c in cilindros}
@@ -230,8 +232,9 @@ def _formulario_of(of_existente: dict = None):
     
     # Encontrar indices seleccionados
     idx_maq = 0
-    if es_ed and of_existente.get("maquina_codigo") in maq_opciones:
-        idx_maq = list(maq_opciones.keys()).index(of_existente.get("maquina_codigo"))
+    if es_ed and of_existente.get("maquina_codigo") and of_existente.get("maquina_codigo") != "Sin asignar":
+        if of_existente["maquina_codigo"] in maq_opciones:
+            idx_maq = list(maq_opciones.keys()).index(of_existente["maquina_codigo"])
         
     idx_cli = 0
     if es_ed and of_existente.get("cliente_nombre") in cli_opciones:
@@ -313,7 +316,19 @@ def _formulario_of(of_existente: dict = None):
         )
         
         col_m1, col_m2, col_m3 = st.columns(3)
-        maq_sel = col_m1.selectbox("Máquina *", list(maq_opciones.keys()), index=idx_maq, key=f"{prefix}maq_sel")
+        maq_sel = col_m1.selectbox("Máquina", list(maq_opciones.keys()), index=idx_maq, key=f"{prefix}maq_sel")
+        if es_ed:
+            if col_m1.button("💡 Consultar máquina sugerida", use_container_width=True):
+                from utils.api_client import get_sugerencia_maquina
+                sugs = get_sugerencia_maquina(of_existente["id"])
+                if sugs:
+                    st.session_state["sugs_maq"] = sugs
+                else:
+                    st.error("No se encontraron máquinas aptas.")
+        if "sugs_maq" in st.session_state and es_ed:
+            st.info("Sugerencias:")
+            st.dataframe(st.session_state.pop("sugs_maq"))
+            
         mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat, key=f"{prefix}mat_sel")
         bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
         
@@ -382,7 +397,7 @@ def _formulario_of(of_existente: dict = None):
             "codigo_pt": codigo_pt.strip() or None,
             "descripcion": descripcion.strip() or None,
             "cliente_id": int(cli_opciones[cli_sel]) if cli_sel != "Sin cliente" else None,
-            "maquina_asignada_id": int(maq_opciones[maq_sel]),
+            "maquina_asignada_id": int(maq_opciones[maq_sel]) if maq_opciones[maq_sel] is not None else None,
             "material_id": int(mat_opciones[mat_sel]),
             "cilindro_id": int(cil_opciones[cil_sel]) if cil_sel != "(ninguno)" else None,
             "ancho_mm": float(ancho) if ancho > 0 else None,

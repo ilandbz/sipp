@@ -37,13 +37,32 @@ with tab_maq:
                 nuevo_turno = c2.number_input("Turno (Horas)", value=float(m.get("turno_horas") or 8.0), key=f"turno_{m['id']}")
                 activa = c3.checkbox("Activa", value=m.get("activa", True), key=f"activa_{m['id']}")
                 
-                if st.button("💾 Actualizar Máquina", key=f"btn_maq_{m['id']}"):
+                st.write("---")
+                st.write("**Capacidades (Límites Físicos)**")
+                from utils.api_client import get_capacidad_maquina, actualizar_capacidad_maquina
+                cap = get_capacidad_maquina(m["id"]) or {}
+                cc1, cc2, cc3 = st.columns(3)
+                ancho_min = cc1.number_input("Ancho Min (mm)", value=float(cap.get("ancho_min_mm") or 0.0), key=f"amin_{m['id']}")
+                ancho_max = cc1.number_input("Ancho Max (mm)", value=float(cap.get("ancho_max_mm") or 0.0), key=f"amax_{m['id']}")
+                alto_min = cc2.number_input("Alto Min (mm)", value=float(cap.get("alto_min_mm") or 0.0), key=f"almin_{m['id']}")
+                alto_max = cc2.number_input("Alto Max (mm)", value=float(cap.get("alto_max_mm") or 0.0), key=f"almax_{m['id']}")
+                fuelle_max = cc3.number_input("Fuelle Max (mm)", value=float(cap.get("fuelle_max_mm") or 0.0), key=f"fmax_{m['id']}")
+                
+                if st.button("💾 Guardar Configuración", key=f"btn_maq_{m['id']}", type="primary"):
                     payload = {
                         "velocidad_bpm_max": nuevo_bpm,
                         "turno_horas": nuevo_turno,
                         "activa": activa
                     }
                     if actualizar_maquina(m["id"], payload):
+                        cap_payload = {
+                            "ancho_min_mm": ancho_min if ancho_min > 0 else None,
+                            "ancho_max_mm": ancho_max if ancho_max > 0 else None,
+                            "alto_min_mm": alto_min if alto_min > 0 else None,
+                            "alto_max_mm": alto_max if alto_max > 0 else None,
+                            "fuelle_max_mm": fuelle_max if fuelle_max > 0 else None
+                        }
+                        actualizar_capacidad_maquina(m["id"], cap_payload)
                         st.success("Máquina actualizada ✓")
                         st.cache_data.clear()
                         st.rerun()

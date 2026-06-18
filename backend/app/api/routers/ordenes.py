@@ -333,10 +333,10 @@ async def eliminar_orden(
         await db.rollback()
         raise HTTPException(500, f"Error interno: {str(e)}")
 
-@router.post("/{id}/sugerir-maquina", status_code=status.HTTP_200_OK)
-async def post_sugerir_maquina(id: int, db: AsyncSession = Depends(get_session)):
-    from app.services.asignador import sugerir_maquina
-    ranking = await sugerir_maquina(db, id)
+@router.get("/{id}/sugerir-maquina")
+async def get_sugerir_maquina(id: int, db: AsyncSession = Depends(get_session)):
+    from app.services.asignador import sugerir_maquina_logica
+    ranking = await sugerir_maquina_logica(id, db)
     if not ranking:
         raise HTTPException(status_code=404, detail="Orden de fabricación no encontrada o no se pudo calcular sugerencia")
     return ranking

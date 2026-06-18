@@ -72,6 +72,12 @@ def get_maquinas():
 def actualizar_maquina(id: int, payload: dict):
     return _patch(f"/api/v1/maquinas/{id}", payload)
 
+def get_capacidad_maquina(id: int):
+    return _get(f"/api/v1/maquinas/{id}/capacidad")
+
+def actualizar_capacidad_maquina(id: int, payload: dict):
+    return _patch(f"/api/v1/maquinas/{id}/capacidad", payload)
+
 # ── Materiales ────────────────────────────────────────
 @st.cache_data(ttl=300)
 def get_materiales():
@@ -227,9 +233,15 @@ def importar_csv(file):
     files = {"file": file}
     return _post("/api/v1/ordenes/importar", files=files, timeout=60)
 
+def get_sugerencia_maquina(of_id: int):
+    return _get(f"/api/v1/ordenes/{of_id}/sugerir-maquina")
+
 # ── Semanas ───────────────────────────────────────────
 def get_semanas():
     return _get("/api/v1/semanas/")
+
+def get_semana_activa():
+    return _get("/api/v1/semanas/activa")
 
 def crear_semana(payload: dict):
     return _post("/api/v1/semanas/", payload)

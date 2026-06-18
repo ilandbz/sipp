@@ -41,6 +41,23 @@ class MaquinaRead(MaquinaBase):
     updated_at: datetime
     model_config = {"from_attributes": True}
 
+# --- MAQUINA CAPACIDAD ---
+class MaquinaCapacidadBase(BaseModel):
+    ancho_min_mm: Optional[float] = None
+    ancho_max_mm: Optional[float] = None
+    alto_min_mm: Optional[float] = None
+    alto_max_mm: Optional[float] = None
+    fuelle_max_mm: Optional[float] = None
+    descripcion: Optional[str] = None
+
+class MaquinaCapacidadUpdate(MaquinaCapacidadBase):
+    pass
+
+class MaquinaCapacidadRead(MaquinaCapacidadBase):
+    id: int
+    maquina_id: int
+    model_config = {"from_attributes": True}
+
 
 # --- CLIENTE ---
 class ClienteBase(BaseModel):

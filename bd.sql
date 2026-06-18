@@ -222,12 +222,13 @@ COMMENT ON TABLE sipp.ordenes_fabricacion IS
 -- ============================================================
 CREATE TABLE sipp.semanas_programacion (
     id              SERIAL PRIMARY KEY,
-    maquina_id      INT NOT NULL REFERENCES sipp.maquinas(id),
+    maquina_id      INT REFERENCES sipp.maquinas(id),
     fecha_inicio    DATE NOT NULL,
     fecha_fin       DATE NOT NULL,
     horas_disponibles NUMERIC(6,2),                        -- horas netas de la semana
     estado          VARCHAR(20) NOT NULL DEFAULT 'BORRADOR'
         CHECK (estado IN ('BORRADOR','CONFIRMADA','EN_EJECUCION','CERRADA')),
+    es_global       BOOLEAN NOT NULL DEFAULT FALSE,
     created_by      VARCHAR(100),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -379,6 +380,35 @@ CREATE TABLE sipp.disponibilidad_maquinas (
 );
 
 CREATE INDEX idx_disp_maquina_fecha ON sipp.disponibilidad_maquinas(maquina_id, fecha_inicio, fecha_fin);
+
+-- ============================================================
+-- 12a. CAPACIDADES FÍSICAS DE LAS MÁQUINAS
+-- ============================================================
+CREATE TABLE sipp.maquina_capacidades (
+    id SERIAL PRIMARY KEY,
+    maquina_id INT NOT NULL UNIQUE REFERENCES sipp.maquinas(id),
+    ancho_min_mm NUMERIC(7,2),
+    ancho_max_mm NUMERIC(7,2),
+    alto_min_mm  NUMERIC(7,2),
+    alto_max_mm  NUMERIC(7,2),
+    fuelle_max_mm NUMERIC(7,2),
+    descripcion TEXT
+);
+
+INSERT INTO sipp.maquina_capacidades
+    (maquina_id, ancho_min_mm, ancho_max_mm, alto_min_mm, alto_max_mm, descripcion)
+SELECT m.id,
+    CASE m.codigo WHEN 'M8' THEN 80 WHEN 'M10' THEN 100 WHEN 'M14' THEN 120 END,
+    CASE m.codigo WHEN 'M8' THEN 200 WHEN 'M10' THEN 250 WHEN 'M14' THEN 350 END,
+    CASE m.codigo WHEN 'M8' THEN 100 WHEN 'M10' THEN 120 WHEN 'M14' THEN 150 END,
+    CASE m.codigo WHEN 'M8' THEN 400 WHEN 'M10' THEN 450 WHEN 'M14' THEN 500 END,
+    CASE m.codigo
+        WHEN 'M8'  THEN 'Bolsas pequeñas y medianas'
+        WHEN 'M10' THEN 'Bolsas medianas'
+        WHEN 'M14' THEN 'Bolsas grandes y medianas'
+    END
+FROM sipp.maquinas m WHERE m.codigo IN ('M8','M10','M14')
+ON CONFLICT (maquina_id) DO NOTHING;
 
 -- ============================================================
 -- 12b. HISTORIAL DE SETUPS

@@ -3,11 +3,12 @@ from typing import Optional
 from datetime import date, datetime
 
 class SemanaProgramacionBase(BaseModel):
-    maquina_id: int
+    maquina_id: Optional[int] = None
     fecha_inicio: date
     fecha_fin: date
     horas_disponibles: Optional[float] = None
     estado: str = "BORRADOR"
+    es_global: bool = False
     created_by: Optional[str] = None
 
 class SemanaProgramacionCreate(SemanaProgramacionBase):

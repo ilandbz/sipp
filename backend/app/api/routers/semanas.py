@@ -34,48 +34,58 @@ async def listar_semanas(db: AsyncSession = Depends(get_session)):
     for row in rows:
         sem = row[0]
         sem_data = sem.model_dump()
-        sem_data["maquina_codigo"] = row[1]
+        if sem.es_global:
+            sem_data["maquina_codigo"] = "Todas las máquinas"
+        else:
+            sem_data["maquina_codigo"] = row[1]
         semanas_read.append(SemanaProgramacionRead(**sem_data))
         
     return semanas_read
 
 @router.post("/", response_model=SemanaProgramacionRead, status_code=status.HTTP_201_CREATED)
 async def crear_semana(body: SemanaProgramacionCreate, db: AsyncSession = Depends(get_session)):
-    # 1. Obtener la maquina
-    maquina = await db.get(Maquina, body.maquina_id)
-    if not maquina:
-        raise HTTPException(status_code=404, detail="Máquina no encontrada")
+    if body.es_global:
+        body.maquina_id = None
+        maquina = None
+        stmt_check = select(SemanaProgramacion).where(
+            SemanaProgramacion.es_global == True,
+            SemanaProgramacion.fecha_inicio == body.fecha_inicio
+        )
+    else:
+        maquina = await db.get(Maquina, body.maquina_id)
+        if not maquina:
+            raise HTTPException(status_code=404, detail="Máquina no encontrada")
+        stmt_check = select(SemanaProgramacion).where(
+            SemanaProgramacion.maquina_id == body.maquina_id,
+            SemanaProgramacion.fecha_inicio == body.fecha_inicio
+        )
         
-    # Verificar si ya existe una semana para esta máquina y fecha_inicio
-    stmt_check = select(SemanaProgramacion).where(
-        SemanaProgramacion.maquina_id == body.maquina_id,
-        SemanaProgramacion.fecha_inicio == body.fecha_inicio
-    )
     res_check = await db.execute(stmt_check)
     if res_check.scalars().first():
-        raise HTTPException(status_code=400, detail="Ya existe una semana para esta máquina en esas fechas")
+        raise HTTPException(status_code=400, detail="Ya existe una semana para estas condiciones")
 
-    # 2. Calcular dias hábiles (Lunes a Viernes)
+    # Calcular dias hábiles
     dias_habiles = 0
     curr = body.fecha_inicio
     while curr <= body.fecha_fin:
-        if curr.weekday() < 5:  # Lunes=0, Viernes=4
+        if curr.weekday() < 5:
             dias_habiles += 1
         curr += timedelta(days=1)
         
     horas_disponibles = dias_habiles * 8.0
+    if body.es_global:
+        horas_disponibles *= 3
     
-    # 4. Crear semana
     semana = SemanaProgramacion(
         maquina_id=body.maquina_id,
         fecha_inicio=body.fecha_inicio,
         fecha_fin=body.fecha_fin,
         horas_disponibles=horas_disponibles,
         estado=body.estado or "BORRADOR",
+        es_global=body.es_global,
         created_by=body.created_by
     )
     
-    # Strip tz if needed
     for field_name in ["created_at", "updated_at"]:
         val = getattr(semana, field_name, None)
         if isinstance(val, datetime) and val.tzinfo is not None:
@@ -85,10 +95,44 @@ async def crear_semana(body: SemanaProgramacionCreate, db: AsyncSession = Depend
     await db.flush()
     await db.commit()
     
-    # Retornar lectura
     sem_data = semana.model_dump()
-    sem_data["maquina_codigo"] = maquina.codigo
+    sem_data["maquina_codigo"] = "Todas las máquinas" if body.es_global else maquina.codigo
     return SemanaProgramacionRead(**sem_data)
+
+@router.get("/activa")
+async def obtener_semana_activa(db: AsyncSession = Depends(get_session)):
+    stmt = select(SemanaProgramacion).where(
+        SemanaProgramacion.estado == 'EN_EJECUCION'
+    ).order_by(SemanaProgramacion.fecha_inicio.desc()).limit(1)
+    res = await db.execute(stmt)
+    semana = res.scalars().first()
+    
+    if not semana:
+        return None
+        
+    sem_data = semana.model_dump()
+    if semana.es_global:
+        sem_data["maquina_codigo"] = "Todas las máquinas"
+    else:
+        maquina = await db.get(Maquina, semana.maquina_id)
+        sem_data["maquina_codigo"] = maquina.codigo if maquina else None
+        
+    # Calcular resumen
+    stmt_seq = select(SecuenciaProduccion, OrdenFabricacion).join(
+        OrdenFabricacion, OrdenFabricacion.id == SecuenciaProduccion.orden_fabricacion_id
+    ).where(SecuenciaProduccion.semana_id == semana.id)
+    res_seq = await db.execute(stmt_seq)
+    
+    resumen = {"total_ofs": 0, "horas_usadas": {}}
+    for sp, of in res_seq.all():
+        resumen["total_ofs"] += 1
+        maq_id = of.maquina_asignada_id
+        if maq_id not in resumen["horas_usadas"]:
+            resumen["horas_usadas"][maq_id] = 0.0
+        resumen["horas_usadas"][maq_id] += float(of.horas_produccion or 0) + (float(sp.costo_setup_min) / 60.0)
+        
+    sem_data["resumen"] = resumen
+    return sem_data
 
 @router.get("/{id}")
 async def obtener_semana_detalle(id: int, db: AsyncSession = Depends(get_session)):
@@ -188,6 +232,16 @@ async def agregar_of(
         of = await db.get(OrdenFabricacion, body.of_id)
         if not of:
             raise HTTPException(404, "Orden de fabricación no encontrada")
+            
+        # Asignar máquina automáticamente si no la tiene
+        if not of.maquina_asignada_id:
+            from app.api.routers.ordenes import sugerir_maquina_logica
+            sugerencias = await sugerir_maquina_logica(of.id, db)
+            if sugerencias:
+                mejor_maq_id = sugerencias[0]["maquina_id"]
+                of.maquina_asignada_id = mejor_maq_id
+                db.add(of)
+                await db.flush()
         
         # 3. Verificar que la OF no está ya en una secuencia
         from sqlmodel import select

@@ -58,6 +58,44 @@ async def actualizar_maquina(id: int, body: MaquinaUpdate, db: AsyncSession = De
     await db.refresh(maquina)
     return maquina
 
+@router.get("/{id}/capacidad")
+async def obtener_capacidad(id: int, db: AsyncSession = Depends(get_session)):
+    from app.models.maquina_capacidad import MaquinaCapacidad
+    query = select(MaquinaCapacidad).where(MaquinaCapacidad.maquina_id == id)
+    res = await db.execute(query)
+    cap = res.scalars().first()
+    if not cap:
+        return {} # Retornar un diccionario vacío si no hay capacidades definidas
+    return cap
+
+from pydantic import BaseModel
+class MaquinaCapacidadUpdate(BaseModel):
+    ancho_min_mm: float | None = None
+    ancho_max_mm: float | None = None
+    alto_min_mm: float | None = None
+    alto_max_mm: float | None = None
+    fuelle_max_mm: float | None = None
+
+@router.patch("/{id}/capacidad")
+async def actualizar_capacidad(id: int, body: MaquinaCapacidadUpdate, db: AsyncSession = Depends(get_session)):
+    from app.models.maquina_capacidad import MaquinaCapacidad
+    query = select(MaquinaCapacidad).where(MaquinaCapacidad.maquina_id == id)
+    res = await db.execute(query)
+    cap = res.scalars().first()
+    if not cap:
+        cap = MaquinaCapacidad(maquina_id=id)
+        db.add(cap)
+        
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(cap, key, value)
+        
+    db.add(cap)
+    await db.flush()
+    await db.commit()
+    await db.refresh(cap)
+    return cap
+
 @router.get("/{id}/cola", response_model=list[ColaItemRead])
 async def cola_maquina(id: int, semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
     # Verificar si la máquina existe (si no existe, retornar 404)

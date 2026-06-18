@@ -37,7 +37,8 @@ with col_crear:
             st.warning("No hay máquinas activas disponibles.")
         else:
             with st.form("form_nueva_semana"):
-                maq_sel = st.selectbox("Máquina *", list(maq_opciones.keys()))
+                es_global = st.checkbox("Crear Semana Global (Todas las máquinas)", value=False)
+                maq_sel = st.selectbox("Máquina (solo si NO es global)", list(maq_opciones.keys()))
                 fecha_inicio = st.date_input("Fecha de inicio *", value=datetime.date.today())
                 fecha_fin = st.date_input("Fecha de fin *", value=datetime.date.today() + datetime.timedelta(days=4))
                 
@@ -55,11 +56,14 @@ with col_crear:
                             curr += datetime.timedelta(days=1)
                         
                         horas_disp_calc = dias_habiles * 8.0
+                        if es_global:
+                            horas_disp_calc *= 3
                         
                         payload = {
-                            "maquina_id": maq_opciones[maq_sel],
+                            "maquina_id": maq_opciones[maq_sel] if not es_global else None,
                             "fecha_inicio": str(fecha_inicio),
                             "fecha_fin": str(fecha_fin),
+                            "es_global": es_global
                         }
                         res = crear_semana(payload)
                         if res:
