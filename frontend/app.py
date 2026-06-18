@@ -57,7 +57,8 @@ def opciones_semanas():
     opciones = {}
     for s in semanas:
         # Formato legible: "M8 — 16/06 al 20/06/2026 (BORRADOR)"
-        maquina = s.get("maquina_codigo", s.get("maquina", ""))
+        es_global = s.get("es_global", False)
+        maquina = "🌐 Global" if es_global else s.get("maquina_codigo", s.get("maquina", ""))
         inicio = s.get("fecha_inicio", "")
         fin = s.get("fecha_fin", "")
         estado = s.get("estado", "")
@@ -224,33 +225,25 @@ with col_cola:
             
             if es_global:
                 st.markdown(f"#### Semana global — {semana.get('fecha_inicio', '')} al {semana.get('fecha_fin', '')}")
-                maquinas_objetivo = [m for m in maquinas if m["codigo"] in ["M8", "M10", "M14"]]
-                tabs = st.tabs([m["codigo"] for m in maquinas_objetivo])
-                
-                for tab, maq in zip(tabs, maquinas_objetivo):
-                    with tab:
-                        cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
-                        if not cola:
-                            st.info("Sin órdenes programadas para esta máquina.")
-                        else:
-                            _render_tabla_cola(cola)
+                maquinas_tabs = [m for m in maquinas if m["codigo"] in ["M8", "M10", "M14"]]
             else:
                 maquina_codigo = semana.get("maquina_codigo")
                 if not maquina_codigo or maquina_codigo == "Todas las máquinas" or maquina_codigo == "GLOBAL":
-                    maquina_codigo = "M8" 
-                
-                maq = next((m for m in maquinas if m["codigo"] == maquina_codigo), None)
-                if maq:
-                    st.markdown(f"#### Máquina: {maquina_codigo}")
-                    tabs = st.tabs([maquina_codigo])
-                    with tabs[0]:
+                    maquina_codigo = "M8"
+                st.markdown(f"#### Máquina: {maquina_codigo}")
+                maquinas_tabs = [m for m in maquinas if m["id"] == semana.get("maquina_id")]
+            
+            if not maquinas_tabs:
+                st.warning("Máquina no encontrada.")
+            else:
+                tabs = st.tabs([m["codigo"] for m in maquinas_tabs])
+                for tab, maq in zip(tabs, maquinas_tabs):
+                    with tab:
                         cola = get_cola_maquina(maq["id"], semana_id=semana_sel)
                         if not cola:
-                            st.info("Sin órdenes programadas para esta semana.")
+                            st.info("Sin órdenes programadas para esta semana/máquina.")
                         else:
                             _render_tabla_cola(cola)
-                else:
-                    st.warning("Máquina no encontrada.")
 
 with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")

@@ -112,7 +112,7 @@ with col_lista:
         for semana in semanas:
             col1, col2, col3, col4, col5, col6 = st.columns([1, 2, 2, 2, 2, 3])
             col1.write(semana["id"])
-            maq_cod = "🌐 Todas las máquinas" if semana.get("es_global") else (semana["maquina_codigo"] or f"ID: {semana.get('maquina_id', '')}")
+            maq_cod = "🌐 Global" if semana.get("es_global") else (semana["maquina_codigo"] or f"ID: {semana.get('maquina_id', '')}")
             col2.write(maq_cod)
             col3.write(datetime.datetime.strptime(semana["fecha_inicio"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_inicio") else "")
             col4.write(datetime.datetime.strptime(semana["fecha_fin"], "%Y-%m-%d").strftime("%d/%m/%Y") if semana.get("fecha_fin") else "")
@@ -150,10 +150,22 @@ with col_lista:
         # Selector para ver detalles y cambiar estados
         st.write("---")
         st.subheader("Acciones de Semana")
+        def format_semana_selector(x):
+            if x is None: return "-- Seleccionar --"
+            s = next((sem for sem in semanas if sem["id"] == x), {})
+            maq = "🌐 Global" if s.get("es_global") else s.get("maquina_codigo", "")
+            try:
+                fi = datetime.datetime.strptime(s.get("fecha_inicio", "")[:10], "%Y-%m-%d").strftime("%d/%m")
+                ff = datetime.datetime.strptime(s.get("fecha_fin", "")[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except:
+                fi, ff = s.get("fecha_inicio", ""), s.get("fecha_fin", "")
+            estado = s.get("estado", "")
+            return f"{maq} — {fi} al {ff} ({estado})"
+
         selected_semana_id = st.selectbox(
             "Selecciona una semana para ver su cola de producción o cambiar su estado:",
             options=[None] + [s["id"] for s in semanas],
-            format_func=lambda x: f"ID: {x} - {next((s['maquina_codigo'] for s in semanas if s['id'] == x), '')} ({next((s['fecha_inicio'] for s in semanas if s['id'] == x), '')} al {next((s['fecha_fin'] for s in semanas if s['id'] == x), '')})" if x is not None else "-- Seleccionar --"
+            format_func=format_semana_selector
         )
         
         if selected_semana_id is not None:
