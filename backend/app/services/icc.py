@@ -1,3 +1,8 @@
+def _get(obj, campo, default=None):
+    if isinstance(obj, dict):
+        return obj.get(campo, default)
+    return getattr(obj, campo, default)
+
 def extraer_color_primario(colores_detalle: str | None) -> str:
     if not colores_detalle:
         return ""
@@ -5,18 +10,20 @@ def extraer_color_primario(colores_detalle: str | None) -> str:
 
 def calcular_ancho_bobina(of) -> float:
     """ Ancho de Bobina (mm) = (ancho_mm * 2) + (fuelle_mm * 2) + pega_cm * 10 """
-    if not all([of.ancho_mm, of.fuelle_mm]):
+    ancho_mm = _get(of, "ancho_mm")
+    fuelle_mm = _get(of, "fuelle_mm")
+    if not all([ancho_mm, fuelle_mm]):
         return 0.0
-    pega = getattr(of, "pega_cm", 2.5) or 2.5
-    return (float(of.ancho_mm) * 2) + (float(of.fuelle_mm) * 2) + (float(pega) * 10.0)
+    pega = _get(of, "pega_cm", 2.5) or 2.5
+    return (float(ancho_mm) * 2) + (float(fuelle_mm) * 2) + (float(pega) * 10.0)
 
 def es_cambio_contiguo(of_a, of_b) -> bool:
     """
     Verifica si la transición entre dos OFs es una 'jugada corta'.
     Regla: Si mantienen el mismo ancho, pero varía el fuelle o el alto, es cambio parcial (105 min).
     """
-    if of_a.ancho_mm == of_b.ancho_mm:
-        if of_a.alto_mm != of_b.alto_mm or of_a.fuelle_mm != of_b.fuelle_mm:
+    if _get(of_a, "ancho_mm") == _get(of_b, "ancho_mm"):
+        if _get(of_a, "alto_mm") != _get(of_b, "alto_mm") or _get(of_a, "fuelle_mm") != _get(of_b, "fuelle_mm"):
             return True
     return False
 
@@ -31,7 +38,7 @@ def calcular_costo_cambio(of_a, of_b, penalizaciones: dict) -> tuple[float, dict
     detalle = []
 
     # 1. CAMBIO DE FORMATO (COMPLETO O PARCIAL)
-    if of_a.ancho_mm != of_b.ancho_mm or of_a.alto_mm != of_b.alto_mm or getattr(of_a, "fuelle_mm", None) != getattr(of_b, "fuelle_mm", None):
+    if _get(of_a, "ancho_mm") != _get(of_b, "ancho_mm") or _get(of_a, "alto_mm") != _get(of_b, "alto_mm") or _get(of_a, "fuelle_mm") != _get(of_b, "fuelle_mm"):
         if es_cambio_contiguo(of_a, of_b):
             costo = 105.0 # Jugada corta / cambio parcial
             total_min += costo
@@ -44,22 +51,26 @@ def calcular_costo_cambio(of_a, of_b, penalizaciones: dict) -> tuple[float, dict
             detalle.append(f"Cambio formato +{costo:.1f}min")
 
     # 2. CAMBIO_CILINDRO_IMPRESION
-    if of_a.cilindro_id != of_b.cilindro_id and of_b.cilindro_id is not None:
+    cil_a = _get(of_a, "cilindro_id")
+    cil_b = _get(of_b, "cilindro_id")
+    if cil_a != cil_b and cil_b is not None:
         costo = float(penalizaciones.get("CAMBIO_CILINDRO_IMPRESION", 30.0))
         total_min += costo
         cambio_cilindro = True
         detalle.append(f"Cambio cilindro +{costo:.1f}min")
 
     # 3. CAMBIO_CLISE
-    if of_a.clise_id != of_b.clise_id and of_b.clise_id is not None:
+    clise_a = _get(of_a, "clise_id")
+    clise_b = _get(of_b, "clise_id")
+    if clise_a != clise_b and clise_b is not None:
         costo = float(penalizaciones.get("CAMBIO_CLISE", 17.5))
         total_min += costo
         cambio_clise = True
         detalle.append(f"Cambio clisé +{costo:.1f}min")
 
     # 4. CAMBIO_COLOR_LAVADO_ESTACION
-    color_a = extraer_color_primario(of_a.colores_detalle)
-    color_b = extraer_color_primario(of_b.colores_detalle)
+    color_a = extraer_color_primario(_get(of_a, "colores_detalle"))
+    color_b = extraer_color_primario(_get(of_b, "colores_detalle"))
     if color_a != color_b and color_a != "" and color_b != "":
         costo = float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 45.0))
         total_min += costo
@@ -67,7 +78,9 @@ def calcular_costo_cambio(of_a, of_b, penalizaciones: dict) -> tuple[float, dict
         detalle.append(f"Cambio color +{costo:.1f}min")
 
     # 5. CAMBIO_MATERIAL
-    if of_a.material_id != of_b.material_id:
+    mat_a = _get(of_a, "material_id")
+    mat_b = _get(of_b, "material_id")
+    if mat_a != mat_b:
         costo = float(penalizaciones.get("CAMBIO_MATERIAL", 25.0))
         total_min += costo
         cambio_material = True
