@@ -8,6 +8,32 @@ async def cargar_penalizaciones(db) -> dict:
     ))
     return {r["tipo_cambio"]: float(r["minutos"]) for r in result.mappings().all()}
 
+def _calcular_setup_sincrono(of_a: dict, of_b: dict, penalizaciones: dict) -> float:
+    total = 0.0
+    
+    ancho_a = float(of_a.get("ancho_mm") or 0)
+    ancho_b = float(of_b.get("ancho_mm") or 0)
+    
+    if ancho_a != ancho_b:
+        total += float(penalizaciones.get("CAMBIO_FORMATO_COMPLETO", 480))
+    
+    col_a = str(of_a.get("colores_detalle") or "").split(",")[0].strip().upper()
+    col_b = str(of_b.get("colores_detalle") or "").split(",")[0].strip().upper()
+    if col_a and col_b and col_a != col_b:
+        total += float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 45))
+    
+    cil_a = of_a.get("cilindro_id")
+    cil_b = of_b.get("cilindro_id")
+    if cil_a and cil_b and cil_a != cil_b:
+        total += float(penalizaciones.get("CAMBIO_CILINDRO_IMPRESION", 30))
+    
+    mat_a = of_a.get("material_id")
+    mat_b = of_b.get("material_id")
+    if mat_a and mat_b and mat_a != mat_b:
+        total += float(penalizaciones.get("CAMBIO_MATERIAL", 25))
+    
+    return total
+
 async def _ordenar_greedy(db, ofs: list, penalizaciones: dict) -> list:
     """Ordena OFs minimizando el setup entre consecutivas."""
     if len(ofs) <= 1:
@@ -211,33 +237,46 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             total_ofs_count += len(ofs_ordenadas)
             
     # 7. Calcular y guardar el ICC para cada par
-    async with db.begin():
-        from app.services.icc import calcular_icc
-        for i, of_a in enumerate(todas_ofs):
-            for j, of_b in enumerate(todas_ofs):
-                if i == j:
-                    icc_val = 100.0
-                else:
-                    try:
-                        setup, _ = await calcular_costo_cambio_async(db, of_a, of_b, penalizaciones)
-                        icc_val = calcular_icc(setup)
-                    except Exception:
-                        icc_val = 0.0
-                
+    todas_ofs_lista = []
+    for ofs in grupos_por_maquina.values():
+        todas_ofs_lista.extend(ofs)
+
+    for of_a in todas_ofs_lista:
+        for of_b in todas_ofs_lista:
+            if of_a["id"] == of_b["id"]:
+                icc_val = 100.0
+                setup_val = 0.0
+            else:
+                try:
+                    # Usar la versión SÍNCRONA de calcular_costo_cambio
+                    # (no la async — optimizer ya tiene su propia sesión)
+                    setup_val = _calcular_setup_sincrono(of_a, of_b, penalizaciones)
+                    icc_val = max(0.0, 100.0 - (setup_val / 480.0 * 100.0))
+                except Exception as e:
+                    print(f"Error ICC {of_a['id']}-{of_b['id']}: {e}")
+                    icc_val = 0.0
+                    setup_val = 480.0
+            
+            try:
                 await db.execute(text("""
                     INSERT INTO sipp.icc_cache
                         (of_origen_id, of_destino_id, icc_score,
                          costo_setup_min, calculado_en)
                     VALUES (:a, :b, :icc, :setup, NOW())
                     ON CONFLICT (of_origen_id, of_destino_id)
-                    DO UPDATE SET icc_score = EXCLUDED.icc_score,
-                                 costo_setup_min = EXCLUDED.costo_setup_min,
-                                 calculado_en = NOW()
+                    DO UPDATE SET 
+                        icc_score = EXCLUDED.icc_score,
+                        costo_setup_min = EXCLUDED.costo_setup_min,
+                        calculado_en = NOW()
                 """), {
                     "a": of_a["id"], "b": of_b["id"],
-                    "icc": icc_val,
-                    "setup": 0.0 if i == j else setup
+                    "icc": round(float(icc_val), 1),
+                    "setup": round(float(setup_val), 1)
                 })
+            except Exception as e:
+                print(f"Error guardando ICC cache: {e}")
+
+    await db.commit()
     
     return {
         "ordenes_evaluadas":   total_ofs_count,

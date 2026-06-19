@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 from utils.api_client import (
     get_kpi_por_semana_id, get_cola_maquina, get_maquinas,
-    ejecutar_optimizador, get_semanas, get_icc_matrix
+    ejecutar_optimizador, get_semanas, get_icc_matrix, get_icc_semana
 )
 from auth import restaurar_sesion, is_logged_in, login, logout, get_rol, can, render_sidebar
 from pathlib import Path
@@ -85,29 +85,47 @@ def opciones_semanas():
     return opciones
 
 def render_matriz_icc(semana: str = None, semana_id: int = None):
-    datos = get_icc_matrix(semana=semana, semana_id=semana_id)
-    if not datos or "matrix" not in datos or not datos["matrix"]:
-        st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
-        return
-    df = pd.DataFrame(datos["matrix"])
-    if df.empty:
-        st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
-        return
-    df = df.set_index("of_origen")
-    
-    def colorear_icc(val):
-        try:
-            v = float(val)
-        except (TypeError, ValueError):
-            return ""
-        if v >= 80:
-            return "background-color: #d4edda; color: #155724;"
-        if v >= 50:
-            return "background-color: #fff3cd; color: #856404;"
-        return "background-color: #f8d7da; color: #721c24;"
+    # Al cargar los datos ICC
+    icc_data = get_icc_semana(semana_id) or []
+
+    if icc_data:
+        # Construir pivot table
+        ofs = sorted(set(
+            [r["of_origen"] for r in icc_data] + 
+            [r["of_destino"] for r in icc_data]
+        ))
         
-    styled = df.style.map(colorear_icc).format(precision=0)
-    st.dataframe(styled, width='stretch')
+        matriz = {o: {d: None for d in ofs} for o in ofs}
+        for r in icc_data:
+            matriz[r["of_origen"]][r["of_destino"]] = float(
+                r["icc_score"] or 0)
+        
+        df_icc = pd.DataFrame(matriz, index=ofs, columns=ofs)
+        
+        # Reemplazar None por 0 para visualización
+        df_icc = df_icc.fillna(0)
+        
+        # Función de color para la matriz
+        def color_icc(val):
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                v = 0
+            if v >= 80:
+                return "background-color: rgba(76,175,80,0.3); color: #1B5E20"
+            elif v >= 50:
+                return "background-color: rgba(255,167,38,0.3); color: #E65100"
+            elif v >= 20:
+                return "background-color: rgba(255,87,34,0.3); color: #BF360C"
+            elif v > 0:
+                return "background-color: rgba(239,83,80,0.3); color: #B71C1C"
+            else:
+                return "background-color: rgba(239,83,80,0.15); color: #9E9E9E"
+        
+        styled = df_icc.style.map(color_icc)
+        st.dataframe(styled, use_container_width=True)
+    else:
+        st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
 
 def _render_tabla_cola(cola):
     import pandas as pd
