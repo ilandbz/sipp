@@ -356,7 +356,10 @@ def get_icc_matrix(semana: str = None, semana_id: int = None):
     return _get("/api/v1/kpi/icc_matrix", params)
 
 def get_icc_semana(semana_id: int):
-    return _get(f"/api/v1/kpi/icc/{semana_id}")
+    if not semana_id:
+        return []
+    result = _get(f"/api/v1/kpi/icc/{semana_id}")
+    return result if isinstance(result, list) else []
 
 def get_plan_semanal(semana: str = None):
     params = {"semana": semana} if semana else None

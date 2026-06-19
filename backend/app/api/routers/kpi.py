@@ -168,31 +168,58 @@ async def kpi_optimizaciones_log(db: AsyncSession = Depends(get_session)):
     return [dict(row) for row in result.mappings().all()]
 
 @router.get("/icc/{semana_id}")
-async def get_icc_semana(semana_id: int, db: AsyncSession = Depends(get_session)):
+async def icc_semana(semana_id: int,
+                     db: AsyncSession = Depends(get_session)):
+    from sqlalchemy import text
+    print(f"[ICC] Buscando datos para semana_id={semana_id}")
+    
+    # Primero verificar cuántas OFs hay en la semana
+    r1 = await db.execute(text("""
+        SELECT COUNT(*) as total
+        FROM sipp.secuencias_produccion
+        WHERE semana_id = :id
+    """), {"id": semana_id})
+    total_ofs = r1.scalar()
+    print(f"[ICC] OFs en semana {semana_id}: {total_ofs}")
+    
+    # Verificar cuántos pares hay en icc_cache para esas OFs
+    r2 = await db.execute(text("""
+        SELECT COUNT(*) as total
+        FROM sipp.icc_cache ic
+        WHERE ic.of_origen_id IN (
+            SELECT orden_fabricacion_id
+            FROM sipp.secuencias_produccion
+            WHERE semana_id = :id
+        )
+    """), {"id": semana_id})
+    total_pares = r2.scalar()
+    print(f"[ICC] Pares ICC disponibles: {total_pares}")
+    
+    if total_pares == 0:
+        print(f"[ICC] Sin datos - retornando vacío")
+        return []
+    
     result = await db.execute(text("""
         SELECT 
-            of_a.codigo_of  AS of_origen,
-            of_b.codigo_of  AS of_destino,
-            ROUND(ic.icc_score::numeric, 1) AS icc_score,
-            ROUND(ic.costo_setup_min::numeric, 0) AS setup_min
+            of_a.codigo_of AS of_origen,
+            of_b.codigo_of AS of_destino,
+            COALESCE(ROUND(ic.icc_score::numeric, 1), 0) AS icc_score
         FROM sipp.icc_cache ic
         JOIN sipp.ordenes_fabricacion of_a ON of_a.id = ic.of_origen_id
         JOIN sipp.ordenes_fabricacion of_b ON of_b.id = ic.of_destino_id
         WHERE ic.of_origen_id IN (
-            SELECT DISTINCT of2.id
-            FROM sipp.ordenes_fabricacion of2
-            JOIN sipp.secuencias_produccion sp2 
-                ON sp2.orden_fabricacion_id = of2.id
-            WHERE sp2.semana_id = :semana_id
+            SELECT orden_fabricacion_id
+            FROM sipp.secuencias_produccion
+            WHERE semana_id = :id
         )
         AND ic.of_destino_id IN (
-            SELECT DISTINCT of2.id
-            FROM sipp.ordenes_fabricacion of2
-            JOIN sipp.secuencias_produccion sp2 
-                ON sp2.orden_fabricacion_id = of2.id
-            WHERE sp2.semana_id = :semana_id
+            SELECT orden_fabricacion_id
+            FROM sipp.secuencias_produccion
+            WHERE semana_id = :id
         )
         ORDER BY of_a.codigo_of, of_b.codigo_of
-    """), {"semana_id": semana_id})
-    rows = result.mappings().all()
-    return [dict(r) for r in rows]
+    """), {"id": semana_id})
+    
+    rows = [dict(r) for r in result.mappings().all()]
+    print(f"[ICC] Retornando {len(rows)} pares")
+    return rows

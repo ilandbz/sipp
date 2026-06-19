@@ -85,9 +85,10 @@ def opciones_semanas():
     return opciones
 
 def render_matriz_icc(semana: str = None, semana_id: int = None):
-    # Al cargar los datos ICC
-    icc_data = get_icc_semana(semana_id) or []
-    print(f"DEBUG ICC: semana_id={semana_id}, datos={len(icc_data or [])}")
+    if not semana_id:
+        semana_id = st.session_state.get("semana_id_activa")
+    icc_data = get_icc_semana(semana_id) if semana_id else []
+    print(f"[FRONTEND ICC] semana_id={semana_id}, filas={len(icc_data or [])}")
 
     if icc_data:
         # Construir pivot table
