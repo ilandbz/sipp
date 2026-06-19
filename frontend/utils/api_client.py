@@ -361,6 +361,12 @@ def get_icc_semana(semana_id: int):
     result = _get(f"/api/v1/kpi/icc/{semana_id}")
     return result if isinstance(result, list) else []
 
+def max_icc_con_ofs_de_semana(of_id: int, semana_id: int):
+    res = _get(f"/api/v1/kpi/icc/{semana_id}/max_of/{of_id}")
+    if res and "max_icc" in res:
+        return float(res["max_icc"])
+    return 0.0
+
 def get_plan_semanal(semana: str = None):
     params = {"semana": semana} if semana else None
     return _get("/api/v1/kpi/plan-semanal", params)

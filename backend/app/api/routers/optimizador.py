@@ -100,6 +100,9 @@ async def ejecutar_optimizador(
                     "icc": round(icc_val, 1),
                     "setup": round(setup_val, 1)
                 })
+                if of_a["id"] != of_b["id"] and icc_val >= 50:
+                    print(f"[ICC ALTO] {of_a['codigo_of']} → {of_b['codigo_of']}: ICC={icc_val}")
+                
                 pares_calculados += 1
         
         await db.commit()

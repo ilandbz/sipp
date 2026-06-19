@@ -363,14 +363,14 @@ with col_lista:
                         st.info("No se encontraron resultados para la búsqueda.")
                     else:
                         # Encabezados
-                        cols_tabla = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5])
-                        headers = ["OF", "Descripción", "Medida", "Cant.", "U.M.", "Material", "F. Entrega", "Máquina", ""]
+                        cols_tabla = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5, 1.5])
+                        headers = ["OF", "Descripción", "Medida", "Cant.", "U.M.", "Material", "F. Entrega", "Máquina", "Compatibilidad", ""]
                         for col, h in zip(cols_tabla, headers):
                             col.write(f"**{h}**")
                         st.divider()
 
                         for of in ofs_disp:
-                            cols = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5])
+                            cols = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5, 1.5])
                             cols[0].write(f"**{of['codigo_of']}**")
                             cols[1].write(of['descripcion'] or "-")
                             cols[2].write(of['medida_texto'] or "-")
@@ -385,8 +385,20 @@ with col_lista:
                             else:
                                 cols[7].caption("🤖 Se asignará automáticamente")
                             
+                            from utils.api_client import max_icc_con_ofs_de_semana
+                            icc_con_semana = max_icc_con_ofs_de_semana(of["id"], selected_semana_id)
+                            if icc_con_semana >= 80:
+                                compatibilidad = "🟢 Alta"
+                            elif icc_con_semana >= 50:
+                                compatibilidad = "🟡 Media"
+                            elif icc_con_semana > 0:
+                                compatibilidad = "🟠 Baja"
+                            else:
+                                compatibilidad = "🔴 Incompatible"
+                            cols[8].write(compatibilidad)
+                            
                             btn_key = f"add_of_{selected_semana_id}_{of['id']}"
-                            if cols[8].button("➕ Agregar", key=btn_key, use_container_width=True):
+                            if cols[9].button("➕ Agregar", key=btn_key, use_container_width=True):
                                 res_add = agregar_of_a_semana(selected_semana_id, of["id"])
                                 if res_add:
                                     st.success(f"OF {of['codigo_of']} agregada ✓")

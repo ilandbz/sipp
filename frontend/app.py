@@ -106,25 +106,26 @@ def render_matriz_icc(semana: str = None, semana_id: int = None):
         
         # Reemplazar None por 0 para visualización
         df_icc = df_icc.fillna(0)
+        df_icc = df_icc.round(0).astype(int)  # Redondear a enteros
         
-        # Función de color para la matriz
+        # Función de color mejorada
         def color_icc(val):
             try:
-                v = float(val)
+                v = int(val)
             except (TypeError, ValueError):
-                v = 0
-            if v >= 80:
-                return "background-color: rgba(76,175,80,0.3); color: #1B5E20"
+                return ""
+            if v == 100:
+                return "background-color: rgba(76,175,80,0.4); color: #1B5E20; font-weight:500"
+            elif v >= 80:
+                return "background-color: rgba(76,175,80,0.2); color: #2E7D32"
             elif v >= 50:
-                return "background-color: rgba(255,167,38,0.3); color: #E65100"
+                return "background-color: rgba(255,167,38,0.2); color: #E65100"
             elif v >= 20:
-                return "background-color: rgba(255,87,34,0.3); color: #BF360C"
-            elif v > 0:
-                return "background-color: rgba(239,83,80,0.3); color: #B71C1C"
+                return "background-color: rgba(255,87,34,0.2); color: #BF360C"
             else:
                 return "background-color: rgba(239,83,80,0.15); color: #9E9E9E"
         
-        styled = df_icc.style.map(color_icc)
+        styled = df_icc.style.map(color_icc).format("{:d}")
         st.dataframe(styled, use_container_width=True)
     else:
         st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
@@ -411,11 +412,9 @@ with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")
     
     st.caption("""
-        **Matriz de Compatibilidad (ICC):** Muestra qué tan eficiente 
-        es producir una OF seguida de otra.
-        🟢 Verde = compatible (poco setup) | 🔴 Rojo = incompatible (mucho setup)
-        La diagonal siempre es 100 (misma OF). 
-        El optimizador agrupa las OFs más compatibles juntas.
+        **ICC 100** = misma OF (sin cambio) · 
+        **ICC 91** = solo cambio de color (45 min) · 
+        **ICC 0** = cambio de formato completo (480 min + extras)
     """)
     
     if semana_sel:

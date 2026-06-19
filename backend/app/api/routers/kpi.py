@@ -223,3 +223,19 @@ async def icc_semana(semana_id: int,
     rows = [dict(r) for r in result.mappings().all()]
     print(f"[ICC] Retornando {len(rows)} pares")
     return rows
+
+@router.get("/icc/{semana_id}/max_of/{of_id}")
+async def max_icc_con_ofs_de_semana(semana_id: int, of_id: int, db: AsyncSession = Depends(get_session)):
+    query = text("""
+        SELECT COALESCE(MAX(icc_score), 0)
+        FROM sipp.icc_cache ic
+        WHERE ic.of_origen_id = :of_id
+        AND ic.of_destino_id IN (
+            SELECT orden_fabricacion_id
+            FROM sipp.secuencias_produccion
+            WHERE semana_id = :semana_id
+        )
+    """)
+    res = await db.execute(query, {"of_id": of_id, "semana_id": semana_id})
+    val = res.scalar()
+    return {"max_icc": float(val) if val else 0.0}
