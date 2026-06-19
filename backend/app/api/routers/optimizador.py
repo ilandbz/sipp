@@ -16,12 +16,22 @@ from app.models.log_optimizacion import LogOptimizacion
 router = APIRouter(prefix="/optimizador", tags=["Optimizador"])
 
 @router.post("/ejecutar", status_code=status.HTTP_200_OK)
-async def ejecutar(body: OptimizarRequest, db: AsyncSession = Depends(get_session)):
+async def ejecutar_optimizador(
+    body: OptimizarRequest,
+    db: AsyncSession = Depends(get_session)
+):
     try:
+        from app.services.optimizer import optimizar_semana
         resultado = await optimizar_semana(db, body.semana_id)
         return resultado
     except Exception as e:
-        raise HTTPException(500, f"Error en optimizador: {str(e)}")
+        import traceback
+        tb = traceback.format_exc()
+        print(f"ERROR OPTIMIZADOR: {str(e)}\n{tb}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en optimizador: {str(e)}"
+        )
 
 @router.post("/calcular-tiempos", status_code=status.HTTP_200_OK)
 async def calcular_tiempos(body: CalcularTiemposRequest, db: AsyncSession = Depends(get_session)):

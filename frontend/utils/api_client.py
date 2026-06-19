@@ -303,7 +303,23 @@ def eliminar_semana(id: int):
 
 # ── Optimizador ───────────────────────────────────────
 def ejecutar_optimizador(semana_id: int):
-    return _post("/api/v1/optimizador/ejecutar", {"semana_id": semana_id})
+    try:
+        r = requests.post(
+            f"{BASE_URL}/api/v1/optimizador/ejecutar",
+            json={"semana_id": semana_id},
+            headers=_get_headers(),
+            timeout=60
+        )
+        if r.status_code in [200, 201]:
+            return r.json()
+        else:
+            try:
+                detalle = r.json().get("detail", f"Error {r.status_code}")
+            except Exception:
+                detalle = f"Error HTTP {r.status_code}: {r.text[:200]}"
+            return {"error": detalle, "ordenes_evaluadas": 0}
+    except Exception as e:
+        return {"error": str(e), "ordenes_evaluadas": 0}
 
 def calcular_tiempos(of_ids: list[int]):
     return _post("/api/v1/optimizador/calcular-tiempos", {"of_ids": of_ids})

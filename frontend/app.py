@@ -373,11 +373,11 @@ with col_icc:
                 with st.spinner("Optimizando secuencias..."):
                     resultado = ejecutar_optimizador(semana_id=semana_id)
                 if resultado is None:
-                    st.error("❌ Error al ejecutar el optimizador. "
-                             "Verifique que las OFs tienen máquina asignada.")
+                    st.error("❌ Sin respuesta del backend")
+                elif resultado.get("error"):
+                    st.error(f"❌ {resultado['error']}")
                 elif resultado.get("ordenes_evaluadas", 0) == 0:
-                    st.warning("⚠ No hay órdenes pendientes para optimizar. "
-                               "Agrega OFs a la semana primero desde /semanas")
+                    st.warning("⚠ No hay OFs pendientes para optimizar")
                 else:
                     if resultado and resultado.get("ordenes_evaluadas", 0) > 0:
                         reduccion = resultado.get("reduccion_pct", 0)
