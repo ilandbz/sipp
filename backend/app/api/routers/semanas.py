@@ -383,7 +383,7 @@ async def eliminar_semana(id: int,
                 f"Solo se pueden eliminar semanas en estado BORRADOR. "
                 f"Esta semana está en estado: {semana['estado']}")
         
-        # Restaurar OFs a PENDIENTE
+        # 1. Restaurar OFs a PENDIENTE
         await db.execute(text("""
             UPDATE sipp.ordenes_fabricacion
             SET estado = 'PENDIENTE', updated_at = NOW()
@@ -393,13 +393,33 @@ async def eliminar_semana(id: int,
                 WHERE semana_id = :id
             )
         """), {"id": id})
-        
-        # Eliminar secuencias
+
+        # 2. Limpiar icc_cache de las OFs de esta semana
+        await db.execute(text("""
+            DELETE FROM sipp.icc_cache
+            WHERE of_origen_id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+            OR of_destino_id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+        """), {"id": id})
+
+        # 3. Eliminar secuencias
         await db.execute(text(
             "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
         ), {"id": id})
-        
-        # Eliminar semana
+
+        # 4. Eliminar logs de optimización (FK que faltaba)
+        await db.execute(text(
+            "DELETE FROM sipp.log_optimizaciones WHERE semana_id = :id"
+        ), {"id": id})
+
+        # 5. Finalmente eliminar la semana
         await db.execute(text(
             "DELETE FROM sipp.semanas_programacion WHERE id = :id"
         ), {"id": id})
