@@ -98,82 +98,74 @@ async def sugerir_maquina_logica(of_id: int, db) -> list[dict]:
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-async def sugerir_maquina(db: AsyncSession, of_id: int) -> list[dict]:
+async def sugerir_maquina(db, of_id: int) -> list[dict]:
     from sqlalchemy import text
     
     # Cargar la OF
-    result = await db.execute(
-        text("SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"),
-        {"id": of_id}
-    )
+    result = await db.execute(text(
+        "SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"
+    ), {"id": of_id})
     of = result.mappings().one_or_none()
     if not of:
         return []
     
     # Cargar máquinas activas
-    result2 = await db.execute(
-        text("SELECT * FROM sipp.maquinas WHERE activa = TRUE AND codigo IN ('M8','M10','M14')")
-    )
+    result2 = await db.execute(text("""
+        SELECT m.id, m.codigo, m.velocidad_bpm_max
+        FROM sipp.maquinas m
+        WHERE m.codigo IN ('M8','M10','M14') AND m.activa = TRUE
+        ORDER BY m.codigo
+    """))
     maquinas = result2.mappings().all()
+    
+    # Obtener semana global activa
+    result3 = await db.execute(text("""
+        SELECT id FROM sipp.semanas_programacion
+        WHERE es_global = TRUE
+        AND estado IN ('BORRADOR','EN_EJECUCION','CONFIRMADA')
+        ORDER BY fecha_inicio DESC LIMIT 1
+    """))
+    semana = result3.scalar_one_or_none()
     
     ranking = []
     for maq in maquinas:
-        # Calcular carga actual
-        result3 = await db.execute(text("""
-            SELECT COALESCE(SUM(of2.horas_produccion), 0) as horas_usadas
-            FROM sipp.secuencias_produccion sp
-            JOIN sipp.semanas_programacion s ON s.id = sp.semana_id
-            JOIN sipp.ordenes_fabricacion of2 ON of2.id = sp.orden_fabricacion_id
-            WHERE s.estado = 'EN_EJECUCION'
-            AND of2.maquina_asignada_id = :maq_id
-            AND sp.estado != 'COMPLETADA'
-        """), {"maq_id": maq["id"]})
-        horas_usadas = float(result3.scalar() or 0)
-        carga_pct = min(100.0, (horas_usadas / 40.0) * 100)
+        # Contar OFs ya asignadas a esta máquina en la semana activa
+        if semana:
+            result4 = await db.execute(text("""
+                SELECT COUNT(*) as total,
+                       COALESCE(SUM(of2.horas_produccion), 0) as horas
+                FROM sipp.secuencias_produccion sp
+                JOIN sipp.ordenes_fabricacion of2
+                     ON of2.id = sp.orden_fabricacion_id
+                WHERE sp.semana_id = :semana_id
+                AND of2.maquina_asignada_id = :maq_id
+                AND sp.estado != 'COMPLETADA'
+            """), {"semana_id": semana, "maq_id": maq["id"]})
+            row = result4.mappings().one()
+            n_ofs = int(row["total"] or 0)
+            horas = float(row["horas"] or 0)
+        else:
+            n_ofs, horas = 0, 0.0
         
-        # Cargar último estado de la máquina
-        result4 = await db.execute(text("""
-            SELECT * FROM sipp.ultimo_estado_maquina 
-            WHERE maquina_id = :maq_id
-        """), {"maq_id": maq["id"]})
-        ultimo = result4.mappings().one_or_none()
+        carga_pct = min(100.0, (horas / 40.0) * 100)
         
-        # Calcular ICC con último estado
-        icc = 50.0  # default si no hay último estado
-        if ultimo and ultimo.get("ultima_of_id"):
-            result5 = await db.execute(
-                text("SELECT * FROM sipp.ordenes_fabricacion WHERE id = :id"),
-                {"id": ultimo["ultima_of_id"]}
-            )
-            ultima_of = result5.mappings().one_or_none()
-            if ultima_of:
-                penalizaciones = {
-                    "CAMBIO_FORMATO_MEDIDA_COMPLETA": 480,
-                    "CAMBIO_COLOR_LAVADO_ESTACION": 45,
-                    "CAMBIO_CLISE": 17.5,
-                    "CAMBIO_CILINDRO_IMPRESION": 30,
-                    "CAMBIO_MATERIAL": 25,
-                }
-                setup_min, _ = calcular_costo_cambio(
-                    ultima_of, of, penalizaciones
-                )
-                icc = calcular_icc(setup_min)
+        # Score: máquina con MENOS OFs asignadas tiene ventaja
+        # (no solo menos horas — para balancear el conteo)
+        score = (100 - carga_pct) * 0.5 + (100 - n_ofs * 10) * 0.5
+        score = max(0, score)
         
-        score = (100 - carga_pct) * 0.4 + icc * 0.6
         ranking.append({
-            "maquina_id": maq["id"],
-            "codigo": maq["codigo"],
-            "nombre": maq["nombre"],
-            "score": round(score, 1),
-            "carga_pct": round(carga_pct, 1),
-            "icc": round(icc, 1),
-            "horas_usadas": round(horas_usadas, 2),
+            "maquina_id":  maq["id"],
+            "codigo":      maq["codigo"],
+            "score":       round(score, 1),
+            "carga_pct":   round(carga_pct, 1),
+            "n_ofs":       n_ofs,
+            "horas_usadas": round(horas, 2),
             "recomendada": False
         })
     
-    # Marcar la mejor
+    ranking.sort(key=lambda x: x["score"], reverse=True)
     if ranking:
-        ranking.sort(key=lambda x: x["score"], reverse=True)
         ranking[0]["recomendada"] = True
     
     return ranking
