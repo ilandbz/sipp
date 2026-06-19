@@ -22,12 +22,97 @@ async def ejecutar_optimizador(
 ):
     try:
         from app.services.optimizer import optimizar_semana
+        from app.services.icc import calcular_icc
+        from sqlalchemy import text
+        
+        # 1. Ejecutar optimizador
         resultado = await optimizar_semana(db, body.semana_id)
+        
+        # 2. Calcular ICC para todos los pares de la semana
+        print(f"[ICC] Calculando pares para semana {body.semana_id}")
+        
+        r = await db.execute(text("""
+            SELECT of.id, of.codigo_of, of.ancho_mm, of.alto_mm,
+                   of.colores_detalle, of.material_id, of.cilindro_id
+            FROM sipp.secuencias_produccion sp
+            JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+            WHERE sp.semana_id = :semana_id
+        """), {"semana_id": body.semana_id})
+        ofs = [dict(row) for row in r.mappings().all()]
+        
+        print(f"[ICC] {len(ofs)} OFs encontradas en semana {body.semana_id}")
+        
+        # Penalizaciones básicas
+        penalizaciones = {
+            "CAMBIO_FORMATO_COMPLETO": 480.0,
+            "CAMBIO_COLOR_LAVADO_ESTACION": 45.0,
+            "CAMBIO_CILINDRO_IMPRESION": 30.0,
+            "CAMBIO_MATERIAL": 25.0,
+        }
+        
+        pares_calculados = 0
+        for of_a in ofs:
+            for of_b in ofs:
+                if of_a["id"] == of_b["id"]:
+                    icc_val = 100.0
+                    setup_val = 0.0
+                else:
+                    setup_val = 0.0
+                    
+                    # Cambio de formato
+                    ancho_a = float(of_a.get("ancho_mm") or 0)
+                    ancho_b = float(of_b.get("ancho_mm") or 0)
+                    if ancho_a != ancho_b:
+                        setup_val += 480.0
+                    
+                    # Cambio de color
+                    col_a = str(of_a.get("colores_detalle") or "").split(",")[0].strip().upper()
+                    col_b = str(of_b.get("colores_detalle") or "").split(",")[0].strip().upper()
+                    if col_a and col_b and col_a != col_b:
+                        setup_val += 45.0
+                    
+                    # Cambio de cilindro
+                    if (of_a.get("cilindro_id") and of_b.get("cilindro_id") and
+                            of_a["cilindro_id"] != of_b["cilindro_id"]):
+                        setup_val += 30.0
+                    
+                    # Cambio de material
+                    if (of_a.get("material_id") and of_b.get("material_id") and
+                            of_a["material_id"] != of_b["material_id"]):
+                        setup_val += 25.0
+                    
+                    icc_val = max(0.0, 100.0 - (setup_val / 480.0 * 100.0))
+                
+                await db.execute(text("""
+                    INSERT INTO sipp.icc_cache
+                        (of_origen_id, of_destino_id, icc_score,
+                         costo_setup_min, calculado_en)
+                    VALUES (:a, :b, :icc, :setup, NOW())
+                    ON CONFLICT (of_origen_id, of_destino_id)
+                    DO UPDATE SET
+                        icc_score = EXCLUDED.icc_score,
+                        costo_setup_min = EXCLUDED.costo_setup_min,
+                        calculado_en = NOW()
+                """), {
+                    "a": of_a["id"],
+                    "b": of_b["id"],
+                    "icc": round(icc_val, 1),
+                    "setup": round(setup_val, 1)
+                })
+                pares_calculados += 1
+        
+        await db.commit()
+        print(f"[ICC] {pares_calculados} pares guardados en icc_cache")
+        
+        resultado["icc_calculado"] = pares_calculados
         return resultado
+        
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        print(f"ERROR OPTIMIZADOR: {str(e)}\n{tb}")
+        print(f"[ERROR OPTIMIZADOR] {str(e)}\n{tb}")
         raise HTTPException(
             status_code=500,
             detail=f"Error en optimizador: {str(e)}"
