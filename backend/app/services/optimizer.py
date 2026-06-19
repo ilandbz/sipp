@@ -8,8 +8,41 @@ async def cargar_penalizaciones(db) -> dict:
     ))
     return {r["tipo_cambio"]: float(r["minutos"]) for r in result.mappings().all()}
 
+def _ordenar_greedy(ofs: list, penalizaciones: dict) -> list:
+    """Ordena OFs minimizando el setup entre consecutivas."""
+    if len(ofs) <= 1:
+        return ofs
+    
+    # Para elegir la primera OF de la máquina, podríamos elegir la que tenga fecha de entrega más urgente
+    ofs_sorted_por_fecha = sorted(ofs, key=lambda o: str(o.get("fecha_entrega") or "9999-12-31"))
+    
+    resultado = [ofs_sorted_por_fecha[0]]
+    restantes = list(ofs_sorted_por_fecha[1:])
+    
+    while restantes:
+        actual = resultado[-1]
+        mejor_idx = 0
+        mejor_costo = float('inf')
+        
+        for i, candidata in enumerate(restantes):
+            try:
+                costo, _ = calcular_costo_cambio(actual, candidata, penalizaciones)
+            except Exception:
+                costo = 9999
+            if costo < mejor_costo:
+                mejor_costo = costo
+                mejor_idx = i
+        
+        resultado.append(restantes.pop(mejor_idx))
+    
+    return resultado
+
 async def optimizar_semana(db, semana_id: int) -> dict:
-    # Cargar semana
+    # El optimizador NO redistribuye máquinas.
+    # Solo optimiza el ORDEN dentro de cada máquina.
+    # La asignación de máquina ocurre en agregar-of (una sola vez).
+    
+    # 1. Cargar semana
     result = await db.execute(text(
         "SELECT * FROM sipp.semanas_programacion WHERE id = :id"
     ), {"id": semana_id})
@@ -18,92 +51,87 @@ async def optimizar_semana(db, semana_id: int) -> dict:
         raise ValueError(f"Semana {semana_id} no encontrada")
 
     penalizaciones = await cargar_penalizaciones(db)
-    es_global = bool(semana.get("es_global")) or semana.get("maquina_id") is None
 
-    # Cargar TODAS las OFs de la semana
+    # 2. Cargar TODAS las OFs de la semana con su máquina actual
     result2 = await db.execute(text("""
-        SELECT of.id, of.codigo_of, of.ancho_mm, of.alto_mm, of.fuelle_mm,
-               of.material_id, of.cilindro_id, of.clise_id,
-               of.colores_detalle, of.fecha_entrega, of.horas_produccion,
-               of.maquina_asignada_id,
-               mat.factor_velocidad,
-               m_actual.codigo as maquina_actual
+        SELECT 
+            of.id,
+            of.codigo_of,
+            of.ancho_mm,
+            of.alto_mm,
+            of.fuelle_mm,
+            of.material_id,
+            of.cilindro_id,
+            of.clise_id,
+            of.colores_detalle,
+            of.fecha_entrega,
+            of.horas_produccion,
+            of.maquina_asignada_id,
+            COALESCE(m.codigo, 'SIN_MAQUINA') as maquina_codigo
         FROM sipp.secuencias_produccion sp
         JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
-        LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
-        LEFT JOIN sipp.maquinas m_actual ON m_actual.id = of.maquina_asignada_id
+        LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
         WHERE sp.semana_id = :semana_id
-        AND sp.estado != 'COMPLETADA'
         ORDER BY of.fecha_entrega ASC NULLS LAST
     """), {"semana_id": semana_id})
     todas_ofs = [dict(r) for r in result2.mappings().all()]
 
     if not todas_ofs:
         return {
-            "ordenes_evaluadas": 0, "setup_antes_min": 0.0,
-            "setup_despues_min": 0.0, "setup_antes_horas": 0.0,
-            "setup_despues_horas": 0.0, "reduccion_pct": 0.0,
+            "ordenes_evaluadas": 0,
+            "setup_antes_min": 0.0,
+            "setup_despues_min": 0.0,
+            "setup_antes_horas": 0.0,
+            "setup_despues_horas": 0.0,
+            "reduccion_pct": 0.0,
             "distribucion": {}
         }
 
-    # Cargar máquinas M8, M10, M14
-    result3 = await db.execute(text("""
-        SELECT id, codigo, velocidad_bpm_max, turno_horas
-        FROM sipp.maquinas
-        WHERE codigo IN ('M8','M10','M14') AND activa = TRUE
-        ORDER BY codigo
-    """))
-    maquinas = [dict(r) for r in result3.mappings().all()]
-
-    if es_global:
-        # === DISTRIBUCIÓN INTELIGENTE ENTRE 3 MÁQUINAS ===
-        
-        # Agrupar OFs por ancho (mismo ancho = mismo formato → misma máquina)
-        grupos_por_ancho = {}
-        for of in todas_ofs:
-            ancho = round(float(of.get("ancho_mm") or 0))
-            if ancho not in grupos_por_ancho:
-                grupos_por_ancho[ancho] = []
-            grupos_por_ancho[ancho].append(of)
-        
-        # Ordenar grupos por fecha entrega más urgente
-        grupos = sorted(
-            grupos_por_ancho.values(),
-            key=lambda g: str(min(
-                of.get("fecha_entrega") or "9999-12-31"
-                for of in g
-            ))
-        )
-        
-        # Distribuir grupos entre máquinas balanceando carga
-        asignacion = {m["id"]: [] for m in maquinas}
-        horas_por_maq = {m["id"]: 0.0 for m in maquinas}
-        
-        for grupo in grupos:
-            # Elegir máquina con menos horas acumuladas
-            maq_elegida = min(maquinas, key=lambda m: horas_por_maq[m["id"]])
-            for of in grupo:
-                asignacion[maq_elegida["id"]].append(of)
-                horas_por_maq[maq_elegida["id"]] += float(of.get("horas_produccion") or 1.0)
-        
-        # Actualizar maquina_asignada_id en BD
-        for maq_id, ofs in asignacion.items():
-            for of in ofs:
-                await db.execute(text("""
-                    UPDATE sipp.ordenes_fabricacion
-                    SET maquina_asignada_id = :maq_id, updated_at = NOW()
-                    WHERE id = :of_id
-                """), {"maq_id": maq_id, "of_id": of["id"]})
-        
-    else:
-        # Semana específica: todas las OFs van a la máquina de la semana
-        maq_id_especifica = semana["maquina_id"]
-        asignacion = {m["id"]: [] for m in maquinas}
-        for of in todas_ofs:
-            asignacion.setdefault(maq_id_especifica, []).append(of)
-
-    # === OPTIMIZAR ORDEN DENTRO DE CADA MÁQUINA ===
+    # 3. Agrupar por máquina asignada (RESPETAR asignación existente)
+    # NO redistribuir — solo optimizar el orden
+    grupos_por_maquina = {}
+    ofs_sin_maquina = []
     
+    for of in todas_ofs:
+        maq_id = of.get("maquina_asignada_id")
+        if maq_id:
+            if maq_id not in grupos_por_maquina:
+                grupos_por_maquina[maq_id] = []
+            grupos_por_maquina[maq_id].append(of)
+        else:
+            ofs_sin_maquina.append(of)
+    
+    # Si hay OFs sin máquina, asignarlas a la menos cargada
+    if ofs_sin_maquina:
+        result3 = await db.execute(text("""
+            SELECT id, codigo FROM sipp.maquinas
+            WHERE codigo IN ('M8','M10','M14') AND activa = TRUE
+            ORDER BY codigo
+        """))
+        maquinas_disponibles = [dict(r) for r in result3.mappings().all()]
+        
+        for of in ofs_sin_maquina:
+            # Elegir máquina con menos OFs
+            maq_elegida = min(
+                maquinas_disponibles,
+                key=lambda m: len(grupos_por_maquina.get(m["id"], []))
+            )
+            maq_id = maq_elegida["id"]
+            
+            # Asignar en BD
+            await db.execute(text("""
+                UPDATE sipp.ordenes_fabricacion
+                SET maquina_asignada_id = :maq_id, updated_at = NOW()
+                WHERE id = :of_id
+            """), {"maq_id": maq_id, "of_id": of["id"]})
+            
+            if maq_id not in grupos_por_maquina:
+                grupos_por_maquina[maq_id] = []
+            grupos_por_maquina[maq_id].append(of)
+    
+    # 4. Flush la asignación de máquinas
+    await db.flush()
+
     # PASO 1: Commit/rollback cualquier transacción pendiente
     await db.rollback()
 
@@ -126,52 +154,23 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
         ), {"id": semana_id})
 
-    # PASO 3: Insertar en nueva transacción
+    # 6. Para cada máquina, optimizar el orden con algoritmo greedy
     total_setup = 0.0
     total_ofs_count = 0
-    
+    distribucion = {}
+
     async with db.begin():
-        for maquina in maquinas:
-            maq_id = maquina["id"]
-            ofs_maq = asignacion.get(maq_id, [])
+        for maq_id, ofs_maq in grupos_por_maquina.items():
             if not ofs_maq:
                 continue
             
-            def _ordenar_greedy(ofs: list, penalizaciones: dict) -> list:
-                if not ofs or len(ofs) <= 1:
-                    return ofs
-                
-                # Para elegir la primera OF de la máquina, podríamos
-                # elegir la que tenga fecha de entrega más urgente
-                ofs_sorted_por_fecha = sorted(ofs, key=lambda o: str(o.get("fecha_entrega") or "9999-12-31"))
-                
-                resultado = [ofs_sorted_por_fecha[0]]
-                restantes = list(ofs_sorted_por_fecha[1:])
-                
-                from app.services.icc import calcular_costo_cambio
-                
-                while restantes:
-                    actual = resultado[-1]
-                    mejor_idx = 0
-                    mejor_costo = float('inf')
-                    
-                    for i, candidata in enumerate(restantes):
-                        try:
-                            costo, _ = calcular_costo_cambio(
-                                actual, candidata, penalizaciones
-                            )
-                        except Exception:
-                            costo = 999
-                        if costo < mejor_costo:
-                            mejor_costo = costo
-                            mejor_idx = i
-                    
-                    resultado.append(restantes.pop(mejor_idx))
-                
-                return resultado
-
+            # Obtener código de máquina para el resumen
+            maq_codigo = ofs_maq[0].get("maquina_codigo", str(maq_id))
+            
+            # Ordenar con greedy (vecino más compatible)
             ofs_ordenadas = _ordenar_greedy(ofs_maq, penalizaciones)
             
+            # Insertar secuencias optimizadas
             for pos, of in enumerate(ofs_ordenadas, start=1):
                 setup_min = 0.0
                 motivo = "Primera OF de la máquina"
@@ -182,10 +181,12 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                         setup_min, cambios = calcular_costo_cambio(
                             of_prev, of, penalizaciones
                         )
-                        motivo = " | ".join(cambios.get("detalle", ["Sin cambio"]))
-                    except Exception:
+                        motivo = " | ".join(
+                            cambios.get("detalle", ["Sin detalle"])
+                        ) or "Sin cambio"
+                    except Exception as e:
                         setup_min = 0.0
-                        motivo = "No calculado"
+                        motivo = f"Error: {str(e)[:50]}"
                     total_setup += setup_min
                 
                 await db.execute(text("""
@@ -195,30 +196,25 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                     VALUES
                         (:semana_id, :of_id, :pos,
                          :setup, 'PENDIENTE', :motivo)
-                    ON CONFLICT (semana_id, posicion) 
+                    ON CONFLICT (semana_id, posicion)
                     DO UPDATE SET
                         orden_fabricacion_id = EXCLUDED.orden_fabricacion_id,
-                        costo_setup_min = EXCLUDED.costo_setup_min,
-                        motivo_setup = EXCLUDED.motivo_setup
+                        costo_setup_min      = EXCLUDED.costo_setup_min,
+                        motivo_setup         = EXCLUDED.motivo_setup
                 """), {
                     "semana_id": semana_id,
-                    "of_id": of["id"],
-                    "pos": pos,
-                    "setup": setup_min,
-                    "motivo": motivo
+                    "of_id":     of["id"],
+                    "pos":       pos,
+                    "setup":     round(setup_min, 2),
+                    "motivo":    motivo
                 })
             
+            distribucion[maq_codigo] = len(ofs_ordenadas)
             total_ofs_count += len(ofs_ordenadas)
-    
-    distribucion = {}
-    for maquina in maquinas:
-        n = len(asignacion.get(maquina["id"], []))
-        if n > 0:
-            distribucion[maquina["codigo"]] = n
     
     return {
         "ordenes_evaluadas":   total_ofs_count,
-        "setup_antes_min":     total_setup,  # simplificado
+        "setup_antes_min":     total_setup,
         "setup_despues_min":   total_setup,
         "setup_antes_horas":   round(total_setup / 60, 2),
         "setup_despues_horas": round(total_setup / 60, 2),
