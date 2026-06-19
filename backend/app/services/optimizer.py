@@ -137,11 +137,40 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             if not ofs_maq:
                 continue
             
-            # Ordenar: mismo color juntos, luego por fecha entrega
-            ofs_ordenadas = sorted(ofs_maq, key=lambda o: (
-                str(o.get("fecha_entrega") or "9999-12-31"),
-                (o.get("colores_detalle") or "").split(",")[0].strip().upper()
-            ))
+            def _ordenar_greedy(ofs: list, penalizaciones: dict) -> list:
+                if not ofs or len(ofs) <= 1:
+                    return ofs
+                
+                # Para elegir la primera OF de la máquina, podríamos
+                # elegir la que tenga fecha de entrega más urgente
+                ofs_sorted_por_fecha = sorted(ofs, key=lambda o: str(o.get("fecha_entrega") or "9999-12-31"))
+                
+                resultado = [ofs_sorted_por_fecha[0]]
+                restantes = list(ofs_sorted_por_fecha[1:])
+                
+                from app.services.icc import calcular_costo_cambio
+                
+                while restantes:
+                    actual = resultado[-1]
+                    mejor_idx = 0
+                    mejor_costo = float('inf')
+                    
+                    for i, candidata in enumerate(restantes):
+                        try:
+                            costo, _ = calcular_costo_cambio(
+                                actual, candidata, penalizaciones
+                            )
+                        except Exception:
+                            costo = 999
+                        if costo < mejor_costo:
+                            mejor_costo = costo
+                            mejor_idx = i
+                    
+                    resultado.append(restantes.pop(mejor_idx))
+                
+                return resultado
+
+            ofs_ordenadas = _ordenar_greedy(ofs_maq, penalizaciones)
             
             for pos, of in enumerate(ofs_ordenadas, start=1):
                 setup_min = 0.0

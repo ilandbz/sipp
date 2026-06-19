@@ -143,12 +143,15 @@ def _render_tabla_cola(cola):
         color = color_setup_fila(float(row.get("costo_setup_min", 0)))
         return [color] * len(row)
 
+    if "posicion" in df.columns:
+        df = df.sort_values("posicion")
+
     df_show = df[["posicion", "codigo_of", "medida_texto", "material",
                   "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]]
     
     styled_df = df_show.style.apply(row_style, axis=1)
     
-    st.write(styled_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    st.write(styled_df.hide(axis="index").to_html(escape=False), unsafe_allow_html=True)
     
     st.caption("""
         🟢 Verde: setup ≤ 44 min (cambio menor) |
