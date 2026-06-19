@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from datetime import datetime
-from app.services.icc import calcular_costo_cambio, calcular_icc
+from app.services.icc import calcular_costo_cambio_async, calcular_icc
 
 async def cargar_penalizaciones(db) -> dict:
     result = await db.execute(text(
@@ -8,7 +8,7 @@ async def cargar_penalizaciones(db) -> dict:
     ))
     return {r["tipo_cambio"]: float(r["minutos"]) for r in result.mappings().all()}
 
-def _ordenar_greedy(ofs: list, penalizaciones: dict) -> list:
+async def _ordenar_greedy(db, ofs: list, penalizaciones: dict) -> list:
     """Ordena OFs minimizando el setup entre consecutivas."""
     if len(ofs) <= 1:
         return ofs
@@ -26,7 +26,7 @@ def _ordenar_greedy(ofs: list, penalizaciones: dict) -> list:
         
         for i, candidata in enumerate(restantes):
             try:
-                costo, _ = calcular_costo_cambio(actual, candidata, penalizaciones)
+                costo, _ = await calcular_costo_cambio_async(db, actual, candidata, penalizaciones)
             except Exception:
                 costo = 9999
             if costo < mejor_costo:
@@ -169,7 +169,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             maq_codigo = ofs_maq[0].get("maquina_codigo", str(maq_id))
             
             # Ordenar con greedy (vecino más compatible)
-            ofs_ordenadas = _ordenar_greedy(ofs_maq, penalizaciones)
+            ofs_ordenadas = await _ordenar_greedy(db, ofs_maq, penalizaciones)
             
             # Insertar secuencias optimizadas
             for idx, of in enumerate(ofs_ordenadas):
@@ -179,8 +179,8 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                 if idx > 0:
                     of_prev = ofs_ordenadas[idx - 1]
                     try:
-                        setup_min, cambios = calcular_costo_cambio(
-                            of_prev, of, penalizaciones
+                        setup_min, cambios = await calcular_costo_cambio_async(
+                            db, of_prev, of, penalizaciones
                         )
                         motivo = " | ".join(
                             cambios.get("detalle", ["Sin detalle"])
@@ -219,7 +219,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                     icc_val = 100.0
                 else:
                     try:
-                        setup, _ = calcular_costo_cambio(of_a, of_b, penalizaciones)
+                        setup, _ = await calcular_costo_cambio_async(db, of_a, of_b, penalizaciones)
                         icc_val = calcular_icc(setup)
                     except Exception:
                         icc_val = 0.0

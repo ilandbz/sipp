@@ -47,7 +47,7 @@ async def listar_ordenes(
                 of.id, of.codigo_of, of.codigo_pt, of.descripcion,
                 of.referencia, of.estado, of.maquina_asignada_id,
                 of.material_id, of.cliente_id, of.cilindro_id,
-                of.tipo_bolsa_id, of.medida_texto,
+                of.tipo_bolsa_id, tb.numero as tipo_bolsa_num, of.medida_texto,
                 COALESCE(
                     of.medida_texto,
                     CASE 
@@ -74,6 +74,7 @@ async def listar_ordenes(
             LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
             LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
             LEFT JOIN sipp.clientes c ON c.id = of.cliente_id
+            LEFT JOIN sipp.tipos_bolsa tb ON tb.id = of.tipo_bolsa_id
             WHERE {where}
             ORDER BY of.created_at DESC
             LIMIT 500
@@ -148,7 +149,7 @@ async def generar_codigo_of(db: AsyncSession) -> str:
     print(f"Código generado: {codigo_of}")
     return codigo_of
 
-async def calcular_horas(db, cantidad_mt, maquina_id, material_id) -> float:
+async def calcular_horas(db, cantidad_mt, maquina_id, material_id, merma_pct=2.5) -> float:
     if not cantidad_mt or not maquina_id:
         return 0.0
     result = await db.execute(text("""
@@ -163,7 +164,11 @@ async def calcular_horas(db, cantidad_mt, maquina_id, material_id) -> float:
     bpm = float(row["velocidad_bpm_max"] or 80)
     factor = float(row["factor_velocidad"] or 1.0)
     bolsas = float(cantidad_mt) * 1000
-    horas = bolsas / (bpm * factor * 60)
+    try:
+        merma_val = float(merma_pct)
+    except (TypeError, ValueError):
+        merma_val = 2.5
+    horas = (bolsas * (1 + merma_val / 100)) / (bpm * factor * 60)
     return round(horas, 2)
 
 @router.post("/", response_model=OrdenFabricacionRead, status_code=status.HTTP_201_CREATED)
@@ -196,7 +201,8 @@ async def crear_orden(
         datos["horas_produccion"] = await calcular_horas(
             db, datos.get("cantidad_programada"),
             datos.get("maquina_asignada_id"),
-            datos.get("material_id")
+            datos.get("material_id"),
+            datos.get("merma_pct", 2.5)
         )
         
         # Insertar usando SQL directo para evitar lazy loading
@@ -210,7 +216,7 @@ async def crear_orden(
             "ancho_mm", "alto_mm", "fuelle_mm", "ancho_bobina_mm",
             "pega_cm", "gramaje", "num_colores", "colores_detalle",
             "cantidad_programada", "unidad_medida", "fecha_entrega",
-            "prioridad", "estado", "observacion", "horas_produccion",
+            "prioridad", "estado", "observacion", "horas_produccion", "merma_pct",
             "importado_en", "created_at", "updated_at"
         ]
         
@@ -266,14 +272,15 @@ async def actualizar_orden(
             datos["ancho_bobina_mm"] = (ancho + fuelle) * 2 + (pega * 10)
             
         # Calcular horas_produccion
-        if "cantidad_programada" in datos or "maquina_asignada_id" in datos or "material_id" in datos:
-            of_result = await db.execute(text("SELECT cantidad_programada, maquina_asignada_id, material_id FROM sipp.ordenes_fabricacion WHERE id = :id"), {"id": id})
+        if "cantidad_programada" in datos or "maquina_asignada_id" in datos or "material_id" in datos or "merma_pct" in datos:
+            of_result = await db.execute(text("SELECT cantidad_programada, maquina_asignada_id, material_id, merma_pct FROM sipp.ordenes_fabricacion WHERE id = :id"), {"id": id})
             of_row = of_result.mappings().one_or_none()
             if of_row:
                 cant = datos.get("cantidad_programada") if "cantidad_programada" in datos else of_row["cantidad_programada"]
                 maq = datos.get("maquina_asignada_id") if "maquina_asignada_id" in datos else of_row["maquina_asignada_id"]
                 mat = datos.get("material_id") if "material_id" in datos else of_row["material_id"]
-                datos["horas_produccion"] = await calcular_horas(db, cant, maq, mat)
+                merma = datos.get("merma_pct") if "merma_pct" in datos else of_row.get("merma_pct", 2.5)
+                datos["horas_produccion"] = await calcular_horas(db, cant, maq, mat, merma)
         
         # Construir SET dinámico
         campos_validos = [
@@ -282,7 +289,7 @@ async def actualizar_orden(
             "tipo_bolsa_id", "medida_texto", "ancho_mm", "alto_mm",
             "fuelle_mm", "ancho_bobina_mm", "gramaje", "num_colores",
             "colores_detalle", "cantidad_programada", "unidad_medida",
-            "fecha_entrega", "fecha_atencion", "prioridad", "horas_produccion",
+            "fecha_entrega", "fecha_atencion", "prioridad", "horas_produccion", "merma_pct",
             "franquicia_nivel", "observacion", "estado", "updated_at"
         ]
         

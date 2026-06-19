@@ -173,15 +173,16 @@ async def get_icc_semana(semana_id: int, db: AsyncSession = Depends(get_session)
         SELECT 
             of_a.codigo_of as of_origen,
             of_b.codigo_of as of_destino,
-            ic.icc_score
+            ic.icc_score,
+            ic.costo_setup_min
         FROM sipp.icc_cache ic
         JOIN sipp.ordenes_fabricacion of_a ON of_a.id = ic.of_origen_id
         JOIN sipp.ordenes_fabricacion of_b ON of_b.id = ic.of_destino_id
-        WHERE of_a.id IN (
+        WHERE ic.of_origen_id IN (
             SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
             WHERE semana_id = :semana_id
         )
-        AND of_b.id IN (
+        AND ic.of_destino_id IN (
             SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
             WHERE semana_id = :semana_id
         )
