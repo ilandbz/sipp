@@ -321,12 +321,19 @@ with col_cola:
             if not maquinas_tabs:
                 st.warning("Máquina no encontrada.")
             else:
+                from utils.api_client import get_cola_semana
+                cola_semana = get_cola_semana(semana_sel) or []
+                
                 maquinas_con_ofs = []
                 todas_las_colas = {}
                 for maq in maquinas_tabs:
-                    cola = get_cola_maquina(maq["id"], semana_id=semana_sel) or []
-                    todas_las_colas[maq["codigo"]] = cola
-                    if cola:
+                    cola_maq = [
+                        item for item in cola_semana
+                        if item.get("maquina") == maq["codigo"]
+                        or item.get("maquina_codigo") == maq["codigo"]
+                    ]
+                    todas_las_colas[maq["codigo"]] = cola_maq
+                    if cola_maq:
                         maquinas_con_ofs.append(maq["codigo"])
 
                 # Labels con indicador de cuántas OFs tiene cada máquina

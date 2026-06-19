@@ -279,6 +279,9 @@ def get_ofs_disponibles(semana_id: int):
 def get_semana_detalle(semana_id: int):
     return _get(f"/api/v1/semanas/{semana_id}")
 
+def get_cola_semana(semana_id: int):
+    return _get(f"/api/v1/semanas/{semana_id}/cola-completa")
+
 def eliminar_of_semana(semana_id: int, secuencia_id: int):
     return _delete(f"/api/v1/semanas/{semana_id}/secuencias/{secuencia_id}")
 

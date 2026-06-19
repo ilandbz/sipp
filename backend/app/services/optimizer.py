@@ -157,6 +157,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     # 6. Para cada máquina, optimizar el orden con algoritmo greedy
     total_setup = 0.0
     total_ofs_count = 0
+    pos_global = 1
     distribucion = {}
 
     async with db.begin():
@@ -171,12 +172,12 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             ofs_ordenadas = _ordenar_greedy(ofs_maq, penalizaciones)
             
             # Insertar secuencias optimizadas
-            for pos, of in enumerate(ofs_ordenadas, start=1):
+            for idx, of in enumerate(ofs_ordenadas):
                 setup_min = 0.0
                 motivo = "Primera OF de la máquina"
                 
-                if pos > 1:
-                    of_prev = ofs_ordenadas[pos - 2]
+                if idx > 0:
+                    of_prev = ofs_ordenadas[idx - 1]
                     try:
                         setup_min, cambios = calcular_costo_cambio(
                             of_prev, of, penalizaciones
@@ -196,18 +197,15 @@ async def optimizar_semana(db, semana_id: int) -> dict:
                     VALUES
                         (:semana_id, :of_id, :pos,
                          :setup, 'PENDIENTE', :motivo)
-                    ON CONFLICT (semana_id, posicion)
-                    DO UPDATE SET
-                        orden_fabricacion_id = EXCLUDED.orden_fabricacion_id,
-                        costo_setup_min      = EXCLUDED.costo_setup_min,
-                        motivo_setup         = EXCLUDED.motivo_setup
                 """), {
                     "semana_id": semana_id,
                     "of_id":     of["id"],
-                    "pos":       pos,
+                    "pos":       pos_global,
                     "setup":     round(setup_min, 2),
                     "motivo":    motivo
                 })
+                
+                pos_global += 1
             
             distribucion[maq_codigo] = len(ofs_ordenadas)
             total_ofs_count += len(ofs_ordenadas)

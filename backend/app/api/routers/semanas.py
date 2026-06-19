@@ -432,3 +432,25 @@ async def eliminar_semana(id: int,
     except Exception as e:
         await db.rollback()
         raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/{id}/cola-completa")
+async def obtener_cola_completa(id: int, db: AsyncSession = Depends(get_session)):
+    try:
+        from sqlalchemy import text
+        query = """
+            SELECT sp.posicion, of.codigo_of, of.medida_texto,
+                   mat.tipo as material, of.colores_detalle,
+                   sp.costo_setup_min, sp.motivo_setup,
+                   of.fecha_entrega, sp.estado,
+                   m.codigo as maquina
+            FROM sipp.secuencias_produccion sp
+            JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+            LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
+            LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
+            WHERE sp.semana_id = :semana_id
+            ORDER BY m.codigo, sp.posicion
+        """
+        result = await db.execute(text(query), {"semana_id": id})
+        return [dict(row) for row in result.mappings().all()]
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
