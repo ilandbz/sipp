@@ -148,6 +148,24 @@ async def generar_codigo_of(db: AsyncSession) -> str:
     print(f"Código generado: {codigo_of}")
     return codigo_of
 
+async def calcular_horas(db, cantidad_mt, maquina_id, material_id) -> float:
+    if not cantidad_mt or not maquina_id:
+        return 0.0
+    result = await db.execute(text("""
+        SELECT m.velocidad_bpm_max, mat.factor_velocidad
+        FROM sipp.maquinas m
+        LEFT JOIN sipp.materiales mat ON mat.id = :mat_id
+        WHERE m.id = :maq_id
+    """), {"maq_id": maquina_id, "mat_id": material_id})
+    row = result.mappings().one_or_none()
+    if not row:
+        return 0.0
+    bpm = float(row["velocidad_bpm_max"] or 80)
+    factor = float(row["factor_velocidad"] or 1.0)
+    bolsas = float(cantidad_mt) * 1000
+    horas = bolsas / (bpm * factor * 60)
+    return round(horas, 2)
+
 @router.post("/", response_model=OrdenFabricacionRead, status_code=status.HTTP_201_CREATED)
 async def crear_orden(
     body: OrdenFabricacionCreate,
@@ -175,6 +193,12 @@ async def crear_orden(
         datos["created_at"] = datetime.utcnow()
         datos["updated_at"] = datetime.utcnow()
         
+        datos["horas_produccion"] = await calcular_horas(
+            db, datos.get("cantidad_programada"),
+            datos.get("maquina_asignada_id"),
+            datos.get("material_id")
+        )
+        
         # Insertar usando SQL directo para evitar lazy loading
         from sqlalchemy import text
         
@@ -186,7 +210,7 @@ async def crear_orden(
             "ancho_mm", "alto_mm", "fuelle_mm", "ancho_bobina_mm",
             "pega_cm", "gramaje", "num_colores", "colores_detalle",
             "cantidad_programada", "unidad_medida", "fecha_entrega",
-            "prioridad", "estado", "observacion",
+            "prioridad", "estado", "observacion", "horas_produccion",
             "importado_en", "created_at", "updated_at"
         ]
         
@@ -240,6 +264,16 @@ async def actualizar_orden(
         if ancho and fuelle:
             pega = datos.get("pega_cm", 2.5) or 2.5
             datos["ancho_bobina_mm"] = (ancho + fuelle) * 2 + (pega * 10)
+            
+        # Calcular horas_produccion
+        if "cantidad_programada" in datos or "maquina_asignada_id" in datos or "material_id" in datos:
+            of_result = await db.execute(text("SELECT cantidad_programada, maquina_asignada_id, material_id FROM sipp.ordenes_fabricacion WHERE id = :id"), {"id": id})
+            of_row = of_result.mappings().one_or_none()
+            if of_row:
+                cant = datos.get("cantidad_programada") if "cantidad_programada" in datos else of_row["cantidad_programada"]
+                maq = datos.get("maquina_asignada_id") if "maquina_asignada_id" in datos else of_row["maquina_asignada_id"]
+                mat = datos.get("material_id") if "material_id" in datos else of_row["material_id"]
+                datos["horas_produccion"] = await calcular_horas(db, cant, maq, mat)
         
         # Construir SET dinámico
         campos_validos = [
@@ -248,7 +282,7 @@ async def actualizar_orden(
             "tipo_bolsa_id", "medida_texto", "ancho_mm", "alto_mm",
             "fuelle_mm", "ancho_bobina_mm", "gramaje", "num_colores",
             "colores_detalle", "cantidad_programada", "unidad_medida",
-            "fecha_entrega", "fecha_atencion", "prioridad",
+            "fecha_entrega", "fecha_atencion", "prioridad", "horas_produccion",
             "franquicia_nivel", "observacion", "estado", "updated_at"
         ]
         
