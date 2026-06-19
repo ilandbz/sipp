@@ -110,50 +110,76 @@ def render_matriz_icc(semana: str = None, semana_id: int = None):
     st.dataframe(styled, width='stretch')
 
 def _render_tabla_cola(cola):
+    import pandas as pd
+    from datetime import datetime
+
     df = pd.DataFrame(cola)
     
-    def badge_estado(estado: str) -> str:
-        estilos = {
-            "PENDIENTE":  ("⚪", "#607D8B", "#E0F2F1"),
-            "EN_PROCESO": ("🔵", "#1565C0", "#E3F2FD"),
-            "COMPLETADA": ("✅", "#2E7D32", "#E8F5E9"),
-            "OMITIDA":    ("⚫", "#424242", "#F5F5F5"),
-        }
-        icono, color_txt, color_bg = estilos.get(estado, ("⚪", "#607D8B", "#E0F2F1"))
-        return f'<span style="background:{color_bg}20; color:{color_txt}; padding:2px 8px; border-radius:12px; font-size:11px; border:1px solid {color_txt}40;">{icono} {estado}</span>'
-    
-    if "estado_secuencia" in df.columns:
-        df["estado"] = df["estado_secuencia"].apply(badge_estado)
-    else:
-        df["estado"] = badge_estado("PENDIENTE")
-        
-    def color_setup_fila(setup_min: float) -> str:
-        if setup_min == 0:
-            return ""  # sin color
-        elif setup_min >= 480:
-            return "background-color: rgba(239,83,80,0.15);"   # rojo suave
-        elif setup_min >= 105:
-            return "background-color: rgba(255,167,38,0.15);"  # naranja suave
-        elif setup_min >= 45:
-            return "background-color: rgba(255,238,88,0.10);"  # amarillo suave
-        else:
-            return "background-color: rgba(76,175,80,0.10);"   # verde suave
+    # Formatear columnas
+    if "costo_setup_min" in df.columns:
+        df["Setup"] = df["costo_setup_min"].apply(
+            lambda x: f"{int(x)} min" if pd.notnull(x) and float(x) > 0 else "—"
+        )
 
-    def row_style(row):
-        color = color_setup_fila(float(row.get("costo_setup_min", 0)))
-        return [color] * len(row)
+    if "fecha_entrega" in df.columns:
+        def fmt_fecha(f):
+            if not f or str(f) in ["nan", "None", ""]:
+                return "—"
+            try:
+                return datetime.strptime(str(f)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except:
+                return str(f)[:10]
+        df["F.Entrega"] = df["fecha_entrega"].apply(fmt_fecha)
 
+    if "colores_detalle" in df.columns:
+        df["Colores"] = df["colores_detalle"].apply(
+            lambda x: (str(x)[:20] + "...") if pd.notnull(x) and len(str(x)) > 20 else (str(x) if pd.notnull(x) else "—")
+        )
+
+    if "cantidad_pedido" in df.columns or "cantidad_programada" in df.columns:
+        df["Cant."] = df.get("cantidad_programada", df.get("cantidad_pedido", ""))
+        df["U.M."] = df.get("unidad_medida", "MIL")
+
+    # Columnas a mostrar (en orden)
+    cols_mostrar = []
     if "posicion" in df.columns:
         df = df.sort_values("posicion")
+        df["#"] = df["posicion"]
+        cols_mostrar.append("#")
+    if "codigo_of" in df.columns:    cols_mostrar.append("codigo_of")
+    if "medida_texto" in df.columns: cols_mostrar.append("medida_texto")
+    if "Cant." in df.columns:        cols_mostrar.append("Cant.")
+    if "U.M." in df.columns:         cols_mostrar.append("U.M.")
+    if "material" in df.columns:     cols_mostrar.append("material")
+    if "Colores" in df.columns:      cols_mostrar.append("Colores")
+    if "Setup" in df.columns:        cols_mostrar.append("Setup")
+    if "F.Entrega" in df.columns:    cols_mostrar.append("F.Entrega")
+    if "estado_secuencia" in df.columns:
+        cols_mostrar.append("estado_secuencia")
 
-    df["Cantidad"] = df.apply(lambda r: f"{r.get('cantidad_pedido') or r.get('cantidad_programada') or '-'}", axis=1)
-    df["U.M."] = df.apply(lambda r: r.get("unidad_medida") or "MIL", axis=1)
+    df_display = df[[c for c in cols_mostrar if c in df.columns]]
 
-    df_show = df[["posicion", "codigo_of", "medida_texto", "Cantidad", "U.M.", "material",
-                  "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]]
-    styled_df = df_show.style.apply(row_style, axis=1)
-    
-    st.write(styled_df.hide(axis="index").to_html(escape=False), unsafe_allow_html=True)
+    df_display = df_display.fillna("—")
+    df_display = df_display.replace("nan", "—")
+    df_display = df_display.replace("None", "—")
+
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "#":               st.column_config.NumberColumn("#", width="small"),
+            "codigo_of":       st.column_config.TextColumn("OF", width="small"),
+            "medida_texto":    st.column_config.TextColumn("Medida", width="small"),
+            "Cant.":           st.column_config.TextColumn("Cant.", width="small"),
+            "U.M.":            st.column_config.TextColumn("U.M.", width="small"),
+            "material":        st.column_config.TextColumn("Material"),
+            "Colores":         st.column_config.TextColumn("Colores"),
+            "Setup":           st.column_config.TextColumn("Setup", width="small"),
+            "F.Entrega":       st.column_config.TextColumn("Entrega", width="small"),
+            "estado_secuencia": st.column_config.TextColumn("Estado", width="small"),
+        }
+    )
     
     st.caption("""
         🟢 Verde: setup ≤ 44 min (cambio menor) |

@@ -217,12 +217,28 @@ with col_lista:
                 df_seq["Estado Secuencia"] = df_seq["estado"].apply(badge_seq)
                 
                 # Añadir columnas calculadas
-                df_seq["Cantidad"] = df_seq.apply(lambda r: f"{r.get('cantidad_pedido') or r.get('cantidad_programada') or '-'}", axis=1)
-                df_seq["U.M."] = df_seq.apply(lambda r: r.get("unidad_medida") or "MIL", axis=1)
+                def get_cant(r):
+                    c = r.get('cantidad_pedido') or r.get('cantidad_programada')
+                    if pd.isna(c) or c == "nan" or c is None or str(c) == "None":
+                        return "—"
+                    return str(c)
+                df_seq["Cantidad"] = df_seq.apply(get_cant, axis=1)
+                
+                def get_um(r):
+                    u = r.get("unidad_medida")
+                    if pd.isna(u) or u == "nan" or u is None or str(u) == "None":
+                        return "MIL"
+                    return str(u)
+                df_seq["U.M."] = df_seq.apply(get_um, axis=1)
                 df_seq["motivo_setup"] = df_seq["motivo_setup"].apply(lambda d: d[:60] + "..." if d and len(d) > 60 else (d or ""))
                 
+                df_display = df_seq[["posicion", "codigo_of", "medida_texto", "Cantidad", "U.M.", "material", "costo_setup_min", "motivo_setup", "Estado Secuencia"]]
+                df_display = df_display.fillna("—")
+                df_display = df_display.replace("nan", "—")
+                df_display = df_display.replace("None", "—")
+
                 st.dataframe(
-                    df_seq[["posicion", "codigo_of", "medida_texto", "Cantidad", "U.M.", "material", "costo_setup_min", "motivo_setup", "Estado Secuencia"]],
+                    df_display,
                     column_config={
                         "posicion": st.column_config.NumberColumn("#", width="small"),
                         "codigo_of": st.column_config.TextColumn("Código OF"),
@@ -235,7 +251,7 @@ with col_lista:
                         "Estado Secuencia": st.column_config.TextColumn("Estado"),
                     },
                     hide_index=True,
-                    width='stretch'
+                    use_container_width=True
                 )
                 
                 # Reordenamiento Manual
