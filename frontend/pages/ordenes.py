@@ -97,9 +97,9 @@ with tab_lista:
         )
 
         # Cabecera de la tabla
-        cols = st.columns([1, 1.5, 2, 4, 2, 2, 2, 2, 1.5, 1.5])
+        cols = st.columns([1, 1.5, 2, 4, 2, 1.5, 1, 2, 2, 2, 1.5, 1.5])
         headers = ["ID","Prioridad","Código OF","Descripción",
-                   "Medida","Material","Máquina","F.Entrega","Estado","Acciones"]
+                   "Medida","Cantidad","U.M.","Material","Máquina","F.Entrega","Estado","Acciones"]
         for col, h in zip(cols, headers):
             col.markdown(f"**{h}**")
         st.divider()
@@ -109,7 +109,7 @@ with tab_lista:
             of_id = of.get("id")
             estado = of.get("estado", "")
             
-            cols = st.columns([1, 1.5, 2, 4, 2, 2, 2, 2, 1.5, 1.5])
+            cols = st.columns([1, 1.5, 2, 4, 2, 1.5, 1, 2, 2, 2, 1.5, 1.5])
             cols[0].write(of_id)
             
             # Badge prioridad
@@ -119,9 +119,17 @@ with tab_lista:
             
             cols[2].write(of.get("codigo_of", ""))
             cols[3].write(of.get("descripcion", "")[:50])
-            cols[4].write(of.get("medida_display") or of.get("medida_texto") or "")
-            cols[5].write(of.get("material_nombre", ""))
-            cols[6].write(of.get("maquina_codigo") or "Sin asignar")
+            
+            medida_display = of.get("medida_display") or of.get("medida_texto") or ""
+            if medida_display in ["0X0X0", "0x0x0", "0X0", "0", ""]:
+                medida_display = "--"
+            cols[4].write(medida_display)
+            
+            cols[5].write(f"{of.get('cantidad_pedido') or of.get('cantidad_programada') or '-'}")
+            cols[6].write(of.get("unidad_medida") or "MIL")
+            
+            cols[7].write(of.get("material_nombre", ""))
+            cols[8].write(of.get("maquina_codigo") or "Sin asignar")
             
             fecha = of.get("fecha_entrega")
             if fecha:
@@ -132,7 +140,7 @@ with tab_lista:
                     fecha_fmt = str(fecha)[:10]
             else:
                 fecha_fmt = ""
-            cols[7].write(fecha_fmt)
+            cols[9].write(fecha_fmt)
             
             # Badge estado
             estado_badge = {
@@ -141,10 +149,10 @@ with tab_lista:
                 "COMPLETADA": "🟢",
                 "CANCELADA": "⚫"
             }
-            cols[8].write(f"{estado_badge.get(estado,'⚪')} {estado}")
+            cols[10].write(f"{estado_badge.get(estado,'⚪')} {estado}")
             
             # Botones acciones
-            with cols[9]:
+            with cols[11]:
                 btn_col1, btn_col2 = st.columns(2)
                 with btn_col1:
                     if st.button("✏️", key=f"edit_{of_id}", 
@@ -288,6 +296,15 @@ def _formulario_of(of_existente: dict = None):
     prefix = f"ed_{of_existente.get('id', 0)}_" if es_ed else "new_"
     form_key = f"form_editar_of_{of_existente.get('id', 0)}" if es_ed else "form_nueva_of"
     
+    if es_ed and of_existente:
+        from utils.api_client import get_sugerencia_maquina
+        sugerencias = get_sugerencia_maquina(of_existente["id"])
+        if sugerencias:
+            mejor = sugerencias[0]
+            st.info(f"💡 Máquina sugerida: **{mejor['codigo']}** "
+                    f"(Carga: {mejor['carga_pct']:.0f}% | "
+                    f"Compatibilidad: {mejor['icc']:.0f}/100)")
+    
     with st.form(form_key, clear_on_submit=not es_ed):
         st.subheader("🌟 Datos Obligatorios")
         if es_ed:
@@ -307,9 +324,12 @@ def _formulario_of(of_existente: dict = None):
         descripcion = st.text_input("Descripción / Producto *", value=of_existente.get("descripcion", "") if es_ed else "", key=f"{prefix}descripcion")
         
         # Campo medida texto (referencia rápida)
+        medida_val = of_existente.get("medida_texto", "") if es_ed else ""
+        if medida_val in ["0X0X0", "0x0x0", "0X0", "0x0"]:
+            medida_val = ""
         medida_texto = st.text_input(
             "Medida (referencia)",
-            value=of_existente.get("medida_texto", "") if es_ed else "",
+            value=medida_val,
             placeholder="Ej: 18X32X10.5 — se actualiza al guardar si ingresas Ancho/Alto/Fuelle",
             help="Si ingresas Ancho, Alto y Fuelle, la medida se calcula automáticamente",
             key=f"{prefix}medida_texto"
@@ -318,25 +338,22 @@ def _formulario_of(of_existente: dict = None):
         col_m1, col_m2, col_m3 = st.columns(3)
         maq_sel = col_m1.selectbox("Máquina", list(maq_opciones.keys()), index=idx_maq, key=f"{prefix}maq_sel")
         if es_ed:
-            if col_m1.button("💡 Consultar máquina sugerida", use_container_width=True):
-                from utils.api_client import get_sugerencia_maquina
-                sugs = get_sugerencia_maquina(of_existente["id"])
-                if sugs:
-                    st.session_state["sugs_maq"] = sugs
-                else:
-                    st.error("No se encontraron máquinas aptas.")
-        if "sugs_maq" in st.session_state and es_ed:
-            st.info("Sugerencias:")
-            st.dataframe(st.session_state.pop("sugs_maq"))
+            col_m1.caption("💡 La máquina sugerida se calcula automáticamente al guardar si dejas 'Asignar automáticamente'")
             
         mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat, key=f"{prefix}mat_sel")
         bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
         
         st.write("**Medida (mm) ***")
         col_dim1, col_dim2, col_dim3 = st.columns(3)
-        ancho = col_dim1.number_input("Ancho", min_value=0.0, step=0.5, value=float(of_existente.get("ancho_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}ancho")
-        alto = col_dim2.number_input("Alto", min_value=0.0, step=0.5, value=float(of_existente.get("alto_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}alto")
-        fuelle = col_dim3.number_input("Fuelle", min_value=0.0, step=0.5, value=float(of_existente.get("fuelle_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}fuelle")
+        
+        ancho_val = float(of_existente.get("ancho_mm") or 0.0) if es_ed else 0.0
+        ancho = col_dim1.number_input("Ancho (mm)", min_value=0.0, step=0.5, value=ancho_val if ancho_val > 0 else None, placeholder="ej: 16.0", key=f"{prefix}ancho")
+        
+        alto_val = float(of_existente.get("alto_mm") or 0.0) if es_ed else 0.0
+        alto = col_dim2.number_input("Alto (mm)", min_value=0.0, step=0.5, value=alto_val if alto_val > 0 else None, placeholder="ej: 28.5", key=f"{prefix}alto")
+        
+        fuelle_val = float(of_existente.get("fuelle_mm") or 0.0) if es_ed else 0.0
+        fuelle = col_dim3.number_input("Fuelle (mm)", min_value=0.0, step=0.5, value=fuelle_val if fuelle_val > 0 else None, placeholder="ej: 10.0", key=f"{prefix}fuelle")
         
         col_c1, col_c2, col_c3 = st.columns(3)
         colores_det = col_c1.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "", key=f"{prefix}colores_det")
@@ -400,9 +417,9 @@ def _formulario_of(of_existente: dict = None):
             "maquina_asignada_id": int(maq_opciones[maq_sel]) if maq_opciones[maq_sel] is not None else None,
             "material_id": int(mat_opciones[mat_sel]),
             "cilindro_id": int(cil_opciones[cil_sel]) if cil_sel != "(ninguno)" else None,
-            "ancho_mm": float(ancho) if ancho > 0 else None,
-            "alto_mm": float(alto) if alto > 0 else None,
-            "fuelle_mm": float(fuelle) if fuelle > 0 else None,
+            "ancho_mm": float(ancho) if ancho and ancho > 0 else None,
+            "alto_mm": float(alto) if alto and alto > 0 else None,
+            "fuelle_mm": float(fuelle) if fuelle and fuelle > 0 else None,
             "distancia_base_mm": float(dist_base) if dist_base > 0 else None,
             "leva_requerida": leva_req.strip() or None,
             "gramaje": float(gramaje) if gramaje > 0 else None,
@@ -419,14 +436,16 @@ def _formulario_of(of_existente: dict = None):
         }
 
         # Si el usuario llenó ancho/alto/fuelle, generar medida_texto automático
-        if ancho > 0 and alto > 0:
-            if fuelle > 0:
+        if ancho and alto and ancho > 0 and alto > 0:
+            if fuelle and fuelle > 0:
                 medida_calculada = f"{ancho}X{alto}X{fuelle}"
             else:
                 medida_calculada = f"{ancho}X{alto}"
             payload["medida_texto"] = medida_calculada
         elif medida_texto.strip():
             payload["medida_texto"] = medida_texto.strip()
+        else:
+            payload["medida_texto"] = None
 
         # Remove None values
         payload = {k: v for k, v in payload.items() if v is not None}
