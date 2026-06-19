@@ -104,10 +104,24 @@ async def optimizar_semana(db, semana_id: int) -> dict:
 
     # === OPTIMIZAR ORDEN DENTRO DE CADA MÁQUINA ===
     
+    # Limpiar icc_cache relacionado ANTES de borrar las secuencias
+    await db.execute(text("""
+        DELETE FROM sipp.icc_cache
+        WHERE of_origen_id IN (
+            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
+            WHERE semana_id = :id
+        ) OR of_destino_id IN (
+            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
+            WHERE semana_id = :id
+        )
+    """), {"id": semana_id})
+    await db.flush()
+
     # Limpiar secuencias existentes
     await db.execute(text(
         "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
     ), {"id": semana_id})
+    await db.flush()  # ← CRÍTICO: hacer flush antes del INSERT
     
     total_setup = 0.0
     total_ofs_count = 0
