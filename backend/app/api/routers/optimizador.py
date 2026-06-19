@@ -86,11 +86,12 @@ async def ejecutar_optimizador(
                 await db.execute(text("""
                     INSERT INTO sipp.icc_cache
                         (of_origen_id, of_destino_id, icc_score,
-                         costo_setup_min, calculado_en)
-                    VALUES (:a, :b, :icc, :setup, NOW())
+                         setup_total_min, costo_setup_min, calculado_en)
+                    VALUES (:a, :b, :icc, :setup, :setup, NOW())
                     ON CONFLICT (of_origen_id, of_destino_id)
                     DO UPDATE SET
                         icc_score = EXCLUDED.icc_score,
+                        setup_total_min = EXCLUDED.setup_total_min,
                         costo_setup_min = EXCLUDED.costo_setup_min,
                         calculado_en = NOW()
                 """), {
