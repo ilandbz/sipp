@@ -144,7 +144,10 @@ async def obtener_semana_detalle(id: int, db: AsyncSession = Depends(get_session
         OrdenFabricacion.descripcion,
         OrdenFabricacion.medida_texto,
         OrdenFabricacion.estado.label("estado_of"),
-        Material.tipo.label("material_nombre")
+        Material.tipo.label("material_nombre"),
+        OrdenFabricacion.cantidad_pedido,
+        OrdenFabricacion.cantidad_programada,
+        OrdenFabricacion.unidad_medida
     ).join(
         OrdenFabricacion, OrdenFabricacion.id == SecuenciaProduccion.orden_fabricacion_id
     ).join(
@@ -165,6 +168,9 @@ async def obtener_semana_detalle(id: int, db: AsyncSession = Depends(get_session
         sp_data["medida_texto"] = r[3]
         sp_data["estado_of"] = r[4]
         sp_data["material"] = r[5]
+        sp_data["cantidad_pedido"] = r[6]
+        sp_data["cantidad_programada"] = r[7]
+        sp_data["unidad_medida"] = r[8]
         secuencias_list.append(sp_data)
         
     sem_data = semana.model_dump()
@@ -428,6 +434,60 @@ async def eliminar_semana(id: int,
         return {"ok": True, "mensaje": "Semana eliminada correctamente"}
         
     except HTTPException:
+        if existe.scalar_one_or_none():
+            raise HTTPException(400, "Esta OF ya está en esta semana")
+
+        # Si la semana es global Y la OF no tiene máquina asignada
+        # → asignar automáticamente la mejor máquina
+        maquina_id = of.get("maquina_asignada_id")
+        
+        es_global = semana.get("es_global", False)
+        
+        if es_global and not maquina_id:
+            # Llamar al asignador para sugerir máquina
+            from app.services.asignador import sugerir_maquina
+            sugerencias = await sugerir_maquina(db, body.of_id)
+            if sugerencias:
+                maquina_id = sugerencias[0]["maquina_id"]
+                # Actualizar la OF con la máquina asignada
+                await db.execute(text("""
+                    UPDATE sipp.ordenes_fabricacion
+                    SET maquina_asignada_id = :maq_id,
+                        updated_at = NOW()
+                    WHERE id = :of_id
+                """), {"maq_id": maquina_id, "of_id": body.of_id})
+        
+        if not maquina_id:
+            raise HTTPException(400,
+                "La OF no tiene máquina asignada y no se pudo sugerir una. "
+                "Asigna una máquina a la OF antes de agregarla.")
+
+        # Calcular posición
+        count = await db.execute(text("""
+            SELECT COUNT(*) FROM sipp.secuencias_produccion
+            WHERE semana_id = :semana_id
+        """), {"semana_id": semana_id})
+        siguiente_pos = (count.scalar() or 0) + 1
+
+        # Crear secuencia
+        await db.execute(text("""
+            INSERT INTO sipp.secuencias_produccion
+                (semana_id, orden_fabricacion_id, posicion, 
+                 costo_setup_min, estado, motivo_setup)
+            VALUES
+                (:semana_id, :of_id, :pos, 0, 'PENDIENTE', 'Asignación manual')
+        """), {"semana_id": semana_id, "of_id": body.of_id, "pos": siguiente_pos})
+
+        await db.commit()
+        
+        return {
+            "ok": True,
+            "posicion": siguiente_pos,
+            "maquina_asignada_id": maquina_id,
+            "mensaje": f"OF agregada en posición {siguiente_pos}"
+        }
+
+    except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
@@ -442,7 +502,8 @@ async def obtener_cola_completa(id: int, db: AsyncSession = Depends(get_session)
                    mat.tipo as material, of.colores_detalle,
                    sp.costo_setup_min, sp.motivo_setup,
                    of.fecha_entrega, sp.estado,
-                   m.codigo as maquina
+                   m.codigo as maquina,
+                   of.cantidad_pedido, of.cantidad_programada, of.unidad_medida
             FROM sipp.secuencias_produccion sp
             JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
             LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
@@ -453,4 +514,145 @@ async def obtener_cola_completa(id: int, db: AsyncSession = Depends(get_session)
         result = await db.execute(text(query), {"semana_id": id})
         return [dict(row) for row in result.mappings().all()]
     except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+class ReordenarRequest(BaseModel):
+    orden: List[int]
+
+@router.put("/{semana_id}/reordenar")
+async def reordenar_semana(semana_id: int, body: ReordenarRequest, db: AsyncSession = Depends(get_session)):
+    semana = await db.get(SemanaProgramacion, semana_id)
+    if not semana:
+        raise HTTPException(404, "Semana no encontrada")
+
+    res_seq = await db.execute(select(SecuenciaProduccion).where(SecuenciaProduccion.semana_id == semana_id))
+    secuencias = res_seq.scalars().all()
+    seq_map = {s.orden_fabricacion_id: s for s in secuencias}
+
+    # Verificar que vengan todos los of_id
+    if len(body.orden) != len(secuencias):
+        raise HTTPException(400, "El orden debe incluir todas las órdenes de la semana")
+
+    from app.services.icc import calcular_costo_cambio
+    from app.models.ultimo_estado_maquina import UltimoEstadoMaquina
+    from app.services.optimizer import cargar_penalizaciones
+    
+    penalizaciones = await cargar_penalizaciones(db)
+
+    res_estado = await db.execute(select(UltimoEstadoMaquina).where(UltimoEstadoMaquina.maquina_id == semana.maquina_id))
+    estado_previo = res_estado.scalars().first()
+    of_previa_mock = None
+    if estado_previo:
+        of_previa_mock = OrdenFabricacion(
+            ancho_mm=estado_previo.ancho_mm,
+            alto_mm=estado_previo.alto_mm,
+            fuelle_mm=estado_previo.fuelle_mm,
+            cilindro_id=estado_previo.cilindro_id,
+            material_id=estado_previo.material_id,
+            colores_detalle=estado_previo.color_principal
+        )
+
+    fin_anterior = datetime.combine(semana.fecha_inicio, datetime.min.time())
+    
+    ordenadas_of_ids = body.orden
+    ofs_en_orden = []
+    for of_id in ordenadas_of_ids:
+        of = await db.get(OrdenFabricacion, of_id)
+        ofs_en_orden.append((seq_map[of_id], of))
+
+    for pos, (seq, of) in enumerate(ofs_en_orden, start=1):
+        seq.posicion = pos
+        setup_min = 0.0
+        motivo = ""
+        
+        if pos == 1 and of_previa_mock:
+            setup_min, res_cambios = calcular_costo_cambio(of_previa_mock, of, penalizaciones)
+            motivo = " | ".join(res_cambios["detalle"])
+        elif pos > 1:
+            of_prev = ofs_en_orden[pos - 2][1]
+            setup_min, res_cambios = calcular_costo_cambio(of_prev, of, penalizaciones)
+            motivo = " | ".join(res_cambios["detalle"])
+
+        seq.costo_setup_min = setup_min
+        seq.motivo_setup = motivo
+        
+        inicio_estimado = fin_anterior + timedelta(minutes=setup_min)
+        fin_estimado = inicio_estimado + timedelta(hours=float(of.horas_produccion or 0.0))
+        fin_anterior = fin_estimado
+        
+        seq.inicio_estimado = inicio_estimado
+        seq.fin_estimado = fin_estimado
+        
+        db.add(seq)
+
+    await db.commit()
+    return {"status": "ok", "message": "Secuencia reordenada correctamente"}
+
+@router.delete("/{id}")
+async def eliminar_semana(id: int,
+                          db: AsyncSession = Depends(get_session)):
+    try:
+        from sqlalchemy import text
+        
+        result = await db.execute(text(
+            "SELECT id, estado, es_global FROM sipp.semanas_programacion WHERE id = :id"
+        ), {"id": id})
+        semana = result.mappings().one_or_none()
+        
+        if not semana:
+            raise HTTPException(404, "Semana no encontrada")
+        
+        if semana["estado"] != "BORRADOR":
+            raise HTTPException(400,
+                f"Solo se pueden eliminar semanas en estado BORRADOR. "
+                f"Esta semana está en estado: {semana['estado']}")
+        
+        # 1. Restaurar OFs a PENDIENTE
+        await db.execute(text("""
+            UPDATE sipp.ordenes_fabricacion
+            SET estado = 'PENDIENTE', updated_at = NOW()
+            WHERE id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+        """), {"id": id})
+
+        # 2. Limpiar icc_cache de las OFs de esta semana
+        await db.execute(text("""
+            DELETE FROM sipp.icc_cache
+            WHERE of_origen_id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+            OR of_destino_id IN (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+        """), {"id": id})
+
+        # 3. Eliminar secuencias
+        await db.execute(text(
+            "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
+        ), {"id": id})
+
+        # 4. Eliminar logs de optimización (FK que faltaba)
+        await db.execute(text(
+            "DELETE FROM sipp.log_optimizaciones WHERE semana_id = :id"
+        ), {"id": id})
+
+        # 5. Finalmente eliminar la semana
+        await db.execute(text(
+            "DELETE FROM sipp.semanas_programacion WHERE id = :id"
+        ), {"id": id})
+        
+        await db.commit()
+        return {"ok": True, "mensaje": "Semana eliminada correctamente"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
         raise HTTPException(500, f"Error: {str(e)}")

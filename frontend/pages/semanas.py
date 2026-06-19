@@ -216,12 +216,19 @@ with col_lista:
                     return colores.get(est, est)
                 df_seq["Estado Secuencia"] = df_seq["estado"].apply(badge_seq)
                 
+                # Añadir columnas calculadas
+                df_seq["Cantidad"] = df_seq.apply(lambda r: f"{r.get('cantidad_pedido') or r.get('cantidad_programada') or '-'}", axis=1)
+                df_seq["U.M."] = df_seq.apply(lambda r: r.get("unidad_medida") or "MIL", axis=1)
+                df_seq["motivo_setup"] = df_seq["motivo_setup"].apply(lambda d: d[:60] + "..." if d and len(d) > 60 else (d or ""))
+                
                 st.dataframe(
-                    df_seq[["posicion", "codigo_of", "medida_texto", "material", "costo_setup_min", "motivo_setup", "Estado Secuencia"]],
+                    df_seq[["posicion", "codigo_of", "medida_texto", "Cantidad", "U.M.", "material", "costo_setup_min", "motivo_setup", "Estado Secuencia"]],
                     column_config={
                         "posicion": st.column_config.NumberColumn("#", width="small"),
                         "codigo_of": st.column_config.TextColumn("Código OF"),
                         "medida_texto": st.column_config.TextColumn("Medida"),
+                        "Cantidad": st.column_config.TextColumn("Cantidad"),
+                        "U.M.": st.column_config.TextColumn("U.M."),
                         "material": st.column_config.TextColumn("Material"),
                         "costo_setup_min": st.column_config.NumberColumn("Setup (min)", format="%.0f"),
                         "motivo_setup": st.column_config.TextColumn("Detalle de Setup"),
@@ -340,32 +347,30 @@ with col_lista:
                         st.info("No se encontraron resultados para la búsqueda.")
                     else:
                         # Encabezados
-                        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7 = st.columns([1.5, 2.5, 2, 1.5, 1.5, 2, 1.5])
-                        c_h1.write("**OF**")
-                        c_h2.write("**Descripción**")
-                        c_h3.write("**Medida**")
-                        c_h4.write("**Material**")
-                        c_h5.write("**F. Entrega**")
-                        c_h6.write("**Máquina**")
-                        c_h7.write("")
+                        cols_tabla = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5])
+                        headers = ["OF", "Descripción", "Medida", "Cant.", "U.M.", "Material", "F. Entrega", "Máquina", ""]
+                        for col, h in zip(cols_tabla, headers):
+                            col.write(f"**{h}**")
                         st.divider()
 
                         for of in ofs_disp:
-                            col_of, col_desc, col_medida, col_material, col_entrega, col_maq, col_btn = st.columns([1.5, 2.5, 2, 1.5, 1.5, 2, 1.5])
-                            col_of.write(f"**{of['codigo_of']}**")
-                            col_desc.write(of['descripcion'] or "-")
-                            col_medida.write(of['medida_texto'] or "-")
-                            col_material.write(of.get('material_nombre') or "-")
-                            col_entrega.write(of['fecha_entrega'] or "-")
+                            cols = st.columns([1.5, 2.5, 2, 1.5, 1, 1.5, 1.5, 2, 1.5])
+                            cols[0].write(f"**{of['codigo_of']}**")
+                            cols[1].write(of['descripcion'] or "-")
+                            cols[2].write(of['medida_texto'] or "-")
+                            cols[3].write(f"{of.get('cantidad_pedido') or of.get('cantidad_programada') or '-'}")
+                            cols[4].write(of.get('unidad_medida') or "MIL")
+                            cols[5].write(of.get('material_nombre') or "-")
+                            cols[6].write(of['fecha_entrega'] or "-")
                             
                             if of.get('maquina_asignada_id'):
                                 maq_cod = of.get('maquina_codigo') or f"M{of.get('maquina_asignada_id')}"
-                                col_maq.markdown(f":green[{maq_cod} ✓]")
+                                cols[7].markdown(f":green[{maq_cod} ✓]")
                             else:
-                                col_maq.caption("🤖 Se asignará automáticamente")
+                                cols[7].caption("🤖 Se asignará automáticamente")
                             
                             btn_key = f"add_of_{selected_semana_id}_{of['id']}"
-                            if col_btn.button("➕ Agregar", key=btn_key, use_container_width=True):
+                            if cols[8].button("➕ Agregar", key=btn_key, use_container_width=True):
                                 res_add = agregar_of_a_semana(selected_semana_id, of["id"])
                                 if res_add:
                                     st.success(f"OF {of['codigo_of']} agregada ✓")

@@ -123,7 +123,10 @@ async def cola_maquina(id: int,
             of.horas_produccion,
             sp.estado       AS estado_secuencia,
             of.estado       AS estado_of,
-            m.codigo        AS maquina
+            m.codigo        AS maquina,
+            of.cantidad_pedido,
+            of.cantidad_programada,
+            of.unidad_medida
         FROM sipp.secuencias_produccion sp
         JOIN sipp.ordenes_fabricacion   of  ON of.id  = sp.orden_fabricacion_id
         JOIN sipp.semanas_programacion  s   ON s.id   = sp.semana_id

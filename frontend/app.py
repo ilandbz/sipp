@@ -146,9 +146,11 @@ def _render_tabla_cola(cola):
     if "posicion" in df.columns:
         df = df.sort_values("posicion")
 
-    df_show = df[["posicion", "codigo_of", "medida_texto", "material",
+    df["Cantidad"] = df.apply(lambda r: f"{r.get('cantidad_pedido') or r.get('cantidad_programada') or '-'}", axis=1)
+    df["U.M."] = df.apply(lambda r: r.get("unidad_medida") or "MIL", axis=1)
+
+    df_show = df[["posicion", "codigo_of", "medida_texto", "Cantidad", "U.M.", "material",
                   "colores_detalle", "costo_setup_min", "fecha_entrega", "estado"]]
-    
     styled_df = df_show.style.apply(row_style, axis=1)
     
     st.write(styled_df.hide(axis="index").to_html(escape=False), unsafe_allow_html=True)
