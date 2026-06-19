@@ -209,6 +209,35 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             
             distribucion[maq_codigo] = len(ofs_ordenadas)
             total_ofs_count += len(ofs_ordenadas)
+            
+    # 7. Calcular y guardar el ICC para cada par
+    async with db.begin():
+        from app.services.icc import calcular_icc
+        for i, of_a in enumerate(todas_ofs):
+            for j, of_b in enumerate(todas_ofs):
+                if i == j:
+                    icc_val = 100.0
+                else:
+                    try:
+                        setup, _ = calcular_costo_cambio(of_a, of_b, penalizaciones)
+                        icc_val = calcular_icc(setup)
+                    except Exception:
+                        icc_val = 0.0
+                
+                await db.execute(text("""
+                    INSERT INTO sipp.icc_cache
+                        (of_origen_id, of_destino_id, icc_score,
+                         costo_setup_min, calculado_en)
+                    VALUES (:a, :b, :icc, :setup, NOW())
+                    ON CONFLICT (of_origen_id, of_destino_id)
+                    DO UPDATE SET icc_score = EXCLUDED.icc_score,
+                                 costo_setup_min = EXCLUDED.costo_setup_min,
+                                 calculado_en = NOW()
+                """), {
+                    "a": of_a["id"], "b": of_b["id"],
+                    "icc": icc_val,
+                    "setup": 0.0 if i == j else setup
+                })
     
     return {
         "ordenes_evaluadas":   total_ofs_count,
