@@ -237,12 +237,19 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             total_ofs_count += len(ofs_ordenadas)
             
     # 7. Calcular y guardar el ICC para cada par
-    todas_ofs_lista = []
-    for ofs in grupos_por_maquina.values():
-        todas_ofs_lista.extend(ofs)
+    # Recargar las OFs que quedaron en la semana
+    result_check = await db.execute(text("""
+        SELECT DISTINCT of.id, of.codigo_of, of.ancho_mm,
+               of.alto_mm, of.colores_detalle, of.material_id,
+               of.cilindro_id, of.maquina_asignada_id
+        FROM sipp.secuencias_produccion sp
+        JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+        WHERE sp.semana_id = :semana_id
+    """), {"semana_id": semana_id})
+    ofs_finales = [dict(r) for r in result_check.mappings().all()]
 
-    for of_a in todas_ofs_lista:
-        for of_b in todas_ofs_lista:
+    for of_a in ofs_finales:
+        for of_b in ofs_finales:
             if of_a["id"] == of_b["id"]:
                 icc_val = 100.0
                 setup_val = 0.0

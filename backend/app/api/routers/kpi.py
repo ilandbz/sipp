@@ -169,25 +169,30 @@ async def kpi_optimizaciones_log(db: AsyncSession = Depends(get_session)):
 
 @router.get("/icc/{semana_id}")
 async def get_icc_semana(semana_id: int, db: AsyncSession = Depends(get_session)):
-    query = text("""
+    result = await db.execute(text("""
         SELECT 
-            of_a.codigo_of as of_origen,
-            of_b.codigo_of as of_destino,
-            ROUND(ic.icc_score::numeric, 1) as icc_score
+            of_a.codigo_of  AS of_origen,
+            of_b.codigo_of  AS of_destino,
+            ROUND(ic.icc_score::numeric, 1) AS icc_score,
+            ROUND(ic.costo_setup_min::numeric, 0) AS setup_min
         FROM sipp.icc_cache ic
         JOIN sipp.ordenes_fabricacion of_a ON of_a.id = ic.of_origen_id
         JOIN sipp.ordenes_fabricacion of_b ON of_b.id = ic.of_destino_id
         WHERE ic.of_origen_id IN (
-            SELECT orden_fabricacion_id 
-            FROM sipp.secuencias_produccion 
-            WHERE semana_id = :semana_id
+            SELECT DISTINCT of2.id
+            FROM sipp.ordenes_fabricacion of2
+            JOIN sipp.secuencias_produccion sp2 
+                ON sp2.orden_fabricacion_id = of2.id
+            WHERE sp2.semana_id = :semana_id
         )
         AND ic.of_destino_id IN (
-            SELECT orden_fabricacion_id 
-            FROM sipp.secuencias_produccion 
-            WHERE semana_id = :semana_id
+            SELECT DISTINCT of2.id
+            FROM sipp.ordenes_fabricacion of2
+            JOIN sipp.secuencias_produccion sp2 
+                ON sp2.orden_fabricacion_id = of2.id
+            WHERE sp2.semana_id = :semana_id
         )
         ORDER BY of_a.codigo_of, of_b.codigo_of
-    """)
-    result = await db.execute(query, {"semana_id": semana_id})
-    return [dict(row) for row in result.mappings().all()]
+    """), {"semana_id": semana_id})
+    rows = result.mappings().all()
+    return [dict(r) for r in rows]
