@@ -104,74 +104,82 @@ async def optimizar_semana(db, semana_id: int) -> dict:
 
     # === OPTIMIZAR ORDEN DENTRO DE CADA MÁQUINA ===
     
-    # Limpiar icc_cache relacionado ANTES de borrar las secuencias
-    await db.execute(text("""
-        DELETE FROM sipp.icc_cache
-        WHERE of_origen_id IN (
-            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
-            WHERE semana_id = :id
-        ) OR of_destino_id IN (
-            SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
-            WHERE semana_id = :id
-        )
-    """), {"id": semana_id})
-    await db.flush()
+    # PASO 1: Commit/rollback cualquier transacción pendiente
+    await db.rollback()
 
-    # Limpiar secuencias existentes
-    await db.execute(text(
-        "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
-    ), {"id": semana_id})
-    await db.flush()  # ← CRÍTICO: hacer flush antes del INSERT
-    
+    # PASO 2: Limpiar en transacción separada y commitear
+    async with db.begin():
+        # Limpiar icc_cache relacionado ANTES de borrar las secuencias
+        await db.execute(text("""
+            DELETE FROM sipp.icc_cache
+            WHERE of_origen_id IN (
+                SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            ) OR of_destino_id IN (
+                SELECT orden_fabricacion_id FROM sipp.secuencias_produccion
+                WHERE semana_id = :id
+            )
+        """), {"id": semana_id})
+
+        # Limpiar secuencias existentes
+        await db.execute(text(
+            "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
+        ), {"id": semana_id})
+
+    # PASO 3: Insertar en nueva transacción
     total_setup = 0.0
     total_ofs_count = 0
     
-    for maquina in maquinas:
-        maq_id = maquina["id"]
-        ofs_maq = asignacion.get(maq_id, [])
-        if not ofs_maq:
-            continue
-        
-        # Ordenar: mismo color juntos, luego por fecha entrega
-        ofs_ordenadas = sorted(ofs_maq, key=lambda o: (
-            str(o.get("fecha_entrega") or "9999-12-31"),
-            (o.get("colores_detalle") or "").split(",")[0].strip().upper()
-        ))
-        
-        for pos, of in enumerate(ofs_ordenadas, start=1):
-            setup_min = 0.0
-            motivo = "Primera OF de la máquina"
+    async with db.begin():
+        for maquina in maquinas:
+            maq_id = maquina["id"]
+            ofs_maq = asignacion.get(maq_id, [])
+            if not ofs_maq:
+                continue
             
-            if pos > 1:
-                of_prev = ofs_ordenadas[pos - 2]
-                try:
-                    setup_min, cambios = calcular_costo_cambio(
-                        of_prev, of, penalizaciones
-                    )
-                    motivo = " | ".join(cambios.get("detalle", ["Sin cambio"]))
-                except Exception:
-                    setup_min = 0.0
-                    motivo = "No calculado"
-                total_setup += setup_min
+            # Ordenar: mismo color juntos, luego por fecha entrega
+            ofs_ordenadas = sorted(ofs_maq, key=lambda o: (
+                str(o.get("fecha_entrega") or "9999-12-31"),
+                (o.get("colores_detalle") or "").split(",")[0].strip().upper()
+            ))
             
-            await db.execute(text("""
-                INSERT INTO sipp.secuencias_produccion
-                    (semana_id, orden_fabricacion_id, posicion,
-                     costo_setup_min, estado, motivo_setup)
-                VALUES
-                    (:semana_id, :of_id, :pos,
-                     :setup, 'PENDIENTE', :motivo)
-            """), {
-                "semana_id": semana_id,
-                "of_id": of["id"],
-                "pos": pos,
-                "setup": setup_min,
-                "motivo": motivo
-            })
-        
-        total_ofs_count += len(ofs_ordenadas)
-    
-    await db.commit()
+            for pos, of in enumerate(ofs_ordenadas, start=1):
+                setup_min = 0.0
+                motivo = "Primera OF de la máquina"
+                
+                if pos > 1:
+                    of_prev = ofs_ordenadas[pos - 2]
+                    try:
+                        setup_min, cambios = calcular_costo_cambio(
+                            of_prev, of, penalizaciones
+                        )
+                        motivo = " | ".join(cambios.get("detalle", ["Sin cambio"]))
+                    except Exception:
+                        setup_min = 0.0
+                        motivo = "No calculado"
+                    total_setup += setup_min
+                
+                await db.execute(text("""
+                    INSERT INTO sipp.secuencias_produccion
+                        (semana_id, orden_fabricacion_id, posicion,
+                         costo_setup_min, estado, motivo_setup)
+                    VALUES
+                        (:semana_id, :of_id, :pos,
+                         :setup, 'PENDIENTE', :motivo)
+                    ON CONFLICT (semana_id, posicion) 
+                    DO UPDATE SET
+                        orden_fabricacion_id = EXCLUDED.orden_fabricacion_id,
+                        costo_setup_min = EXCLUDED.costo_setup_min,
+                        motivo_setup = EXCLUDED.motivo_setup
+                """), {
+                    "semana_id": semana_id,
+                    "of_id": of["id"],
+                    "pos": pos,
+                    "setup": setup_min,
+                    "motivo": motivo
+                })
+            
+            total_ofs_count += len(ofs_ordenadas)
     
     distribucion = {}
     for maquina in maquinas:
