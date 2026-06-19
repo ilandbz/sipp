@@ -15,6 +15,166 @@ async def cargar_penalizaciones(db) -> dict[str, float]:
     result = await db.execute(select(SetupPenalizacion).where(SetupPenalizacion.activo == True))
     return {p.tipo_cambio: float(p.minutos) for p in result.scalars().all()}
 
+async def _distribuir_y_optimizar(db, semana_id: int, 
+                                   penalizaciones: dict) -> dict:
+    """
+    Distribuye OFs entre M8/M10/M14 y optimiza el orden en cada una.
+    """
+    from sqlalchemy import text
+    
+    # 1. Cargar TODAS las OFs de la semana (sin importar máquina actual)
+    result = await db.execute(text("""
+        SELECT of.*, m.velocidad_bpm_max, m.codigo as maquina_codigo,
+               mat.factor_velocidad
+        FROM sipp.ordenes_fabricacion of
+        JOIN sipp.secuencias_produccion sp ON sp.orden_fabricacion_id = of.id
+        LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
+        LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
+        WHERE sp.semana_id = :semana_id
+        AND sp.estado != 'COMPLETADA'
+    """), {"semana_id": semana_id})
+    todas_ofs = result.mappings().all()
+    
+    if not todas_ofs:
+        return {"ordenes_evaluadas": 0, "setup_antes_min": 0,
+                "setup_despues_min": 0, "reduccion_pct": 0}
+    
+    # 2. Cargar máquinas disponibles
+    result_m = await db.execute(text("""
+        SELECT * FROM sipp.maquinas 
+        WHERE codigo IN ('M8','M10','M14') AND activa = TRUE
+        ORDER BY codigo
+    """))
+    maquinas = result_m.mappings().all()
+    
+    # 3. AGRUPAR OFs por compatibilidad de formato
+    # Criterio: mismo ancho_mm → mismo grupo (mismo formato)
+    grupos = {}
+    for of in todas_ofs:
+        ancho = of.get("ancho_mm") or 0
+        # Redondear a 5mm para agrupar formatos similares
+        clave = round(ancho / 5) * 5
+        if clave not in grupos:
+            grupos[clave] = []
+        grupos[clave].append(dict(of))
+    
+    # Ordenar grupos por fecha_entrega más urgente del grupo
+    grupos_ordenados = sorted(
+        grupos.values(),
+        key=lambda g: min(
+            (of.get("fecha_entrega") or "9999-12-31") 
+            for of in g
+        )
+    )
+    
+    # 4. DISTRIBUIR grupos entre máquinas (round-robin por grupo)
+    asignacion = {m["id"]: [] for m in maquinas}
+    horas_por_maquina = {m["id"]: 0.0 for m in maquinas}
+    
+    for grupo in grupos_ordenados:
+        # Encontrar la máquina con menos carga
+        maquina_destino = min(
+            maquinas,
+            key=lambda m: horas_por_maquina[m["id"]]
+        )
+        
+        for of in grupo:
+            asignacion[maquina_destino["id"]].append(of)
+            horas = float(of.get("horas_produccion") or 0)
+            horas_por_maquina[maquina_destino["id"]] += horas
+    
+    # 5. ACTUALIZAR maquina_asignada_id en BD según nueva distribución
+    for maquina_id, ofs in asignacion.items():
+        for of in ofs:
+            await db.execute(text("""
+                UPDATE sipp.ordenes_fabricacion
+                SET maquina_asignada_id = :maq_id, updated_at = NOW()
+                WHERE id = :of_id
+            """), {"maq_id": maquina_id, "of_id": of["id"]})
+    
+    # 6. Para cada máquina, optimizar el ORDEN de sus OFs
+    #    (minimizar setup dentro de la máquina)
+    total_antes = 0.0
+    total_despues = 0.0
+    total_ofs_count = 0
+    
+    # Eliminar secuencias existentes
+    await db.execute(text(
+        "DELETE FROM sipp.secuencias_produccion WHERE semana_id = :id"
+    ), {"id": semana_id})
+    
+    for maquina in maquinas:
+        maq_id = maquina["id"]
+        ofs_maquina = asignacion[maq_id]
+        if not ofs_maquina:
+            continue
+        
+        # Ordenar por compatibilidad SMED dentro de la máquina
+        # Mismo color → juntas, luego mismo material
+        ofs_ordenadas = sorted(ofs_maquina, key=lambda o: (
+            # Primero por fecha entrega (urgencia comercial)
+            str(o.get("fecha_entrega") or "9999"),
+            # Luego por color principal (agrupar colores iguales)
+            (o.get("colores_detalle") or "").split(",")[0].upper(),
+        ))
+        
+        # Calcular setup ANTES (orden original)
+        setup_antes_maq = 0.0
+        setup_despues_maq = 0.0
+        
+        # Insertar secuencias optimizadas
+        for pos, of in enumerate(ofs_ordenadas, start=1):
+            setup_min = 0.0
+            motivo = "Primera OF"
+            
+            if pos > 1:
+                of_prev = ofs_ordenadas[pos-2]
+                # Calcular setup entre of_prev y of
+                setup_min, cambios = calcular_costo_cambio(
+                    of_prev, of, penalizaciones
+                )
+                motivo = " | ".join(cambios.get("detalle", []))
+                setup_despues_maq += setup_min
+            
+            await db.execute(text("""
+                INSERT INTO sipp.secuencias_produccion
+                    (semana_id, orden_fabricacion_id, posicion,
+                     costo_setup_min, estado, motivo_setup)
+                VALUES
+                    (:semana_id, :of_id, :pos,
+                     :setup, 'PENDIENTE', :motivo)
+            """), {
+                "semana_id": semana_id,
+                "of_id": of["id"],
+                "pos": pos,
+                "setup": setup_min,
+                "motivo": motivo or "Sin cambio"
+            })
+        
+        total_antes   += setup_antes_maq
+        total_despues += setup_despues_maq
+        total_ofs_count += len(ofs_ordenadas)
+    
+    await db.commit()
+    
+    reduccion = round(
+        (total_antes - total_despues) / total_antes * 100
+        if total_antes > 0 else 0, 1
+    )
+    
+    return {
+        "ordenes_evaluadas":  total_ofs_count,
+        "setup_antes_min":    round(total_antes, 1),
+        "setup_despues_min":  round(total_despues, 1),
+        "setup_antes_horas":  round(total_antes / 60, 2),
+        "setup_despues_horas": round(total_despues / 60, 2),
+        "reduccion_pct":      reduccion,
+        "distribucion": {
+            m["codigo"]: len(asignacion[m["id"]])
+            for m in maquinas
+        }
+    }
+
 async def optimizar_semana(db, semana_id: int) -> dict:
     # Cargar semana
     result = await db.execute(text(
@@ -28,56 +188,7 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     es_global = semana.get("es_global", False) or semana.get("maquina_id") is None
 
     if es_global:
-        # Obtener máquinas que tienen OFs en esta semana
-        result_maq = await db.execute(text("""
-            SELECT DISTINCT m.id, m.codigo
-            FROM sipp.maquinas m
-            JOIN sipp.ordenes_fabricacion of ON of.maquina_asignada_id = m.id
-            JOIN sipp.secuencias_produccion sp ON sp.orden_fabricacion_id = of.id
-            WHERE sp.semana_id = :semana_id
-            AND sp.estado != 'COMPLETADA'
-            ORDER BY m.codigo
-        """), {"semana_id": semana_id})
-        maquinas = result_maq.mappings().all()
-
-        if not maquinas:
-            return {
-                "ordenes_evaluadas": 0,
-                "setup_antes_min": 0.0,
-                "setup_despues_min": 0.0,
-                "setup_antes_horas": 0.0,
-                "setup_despues_horas": 0.0,
-                "reduccion_pct": 0.0,
-                "por_maquina": []
-            }
-
-        total_antes = 0.0
-        total_despues = 0.0
-        total_ofs = 0
-        por_maquina = []
-
-        for maq in maquinas:
-            res = await _optimizar_maquina(
-                db, semana_id, maq["id"], maq["codigo"], penalizaciones, semana["fecha_inicio"]
-            )
-            total_antes   += res.get("setup_antes_min", 0)
-            total_despues += res.get("setup_despues_min", 0)
-            total_ofs     += res.get("ordenes_evaluadas", 0)
-            por_maquina.append({"maquina": maq["codigo"], **res})
-
-        reduccion = round(
-            (total_antes - total_despues) / total_antes * 100
-            if total_antes > 0 else 0, 1
-        )
-        return {
-            "ordenes_evaluadas":  total_ofs,
-            "setup_antes_min":    round(total_antes, 1),
-            "setup_despues_min":  round(total_despues, 1),
-            "setup_antes_horas":  round(total_antes / 60, 2),
-            "setup_despues_horas": round(total_despues / 60, 2),
-            "reduccion_pct":      reduccion,
-            "por_maquina":        por_maquina
-        }
+        return await _distribuir_y_optimizar(db, semana_id, penalizaciones)
     else:
         # Semana específica
         return await _optimizar_maquina(

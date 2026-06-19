@@ -379,21 +379,22 @@ with col_icc:
                     st.warning("⚠ No hay órdenes pendientes para optimizar. "
                                "Agrega OFs a la semana primero desde /semanas")
                 else:
-                    reduccion = resultado.get("reduccion_pct", 0)
-                    antes = resultado.get("setup_antes_horas", 0)
-                    despues = resultado.get("setup_despues_horas", 0)
-                    
-                    if reduccion > 0:
+                    if resultado and resultado.get("ordenes_evaluadas", 0) > 0:
+                        reduccion = resultado.get("reduccion_pct", 0)
+                        dist = resultado.get("distribucion", {})
+                        
+                        # Mostrar distribución por máquina
+                        dist_texto = " | ".join([
+                            f"{maq}: {n} OFs" 
+                            for maq, n in dist.items() if n > 0
+                        ])
+                        
                         st.session_state["optimizer_success_msg"] = (
-                            f"✓ {resultado['ordenes_evaluadas']} órdenes optimizadas | "
-                            f"Setup: {antes:.1f}h → {despues:.1f}h "
-                            f"({reduccion:.1f}% reducción ↓)"
-                        )
-                    else:
-                        st.session_state["optimizer_success_msg"] = (
-                            f"✓ {resultado['ordenes_evaluadas']} órdenes secuenciadas | "
-                            f"Setup total: {despues:.1f}h "
-                            f"(ya estaban en orden óptimo)"
+                            f"✓ {resultado['ordenes_evaluadas']} órdenes distribuidas y secuenciadas\n\n"
+                            f"📊 {dist_texto}\n\n"
+                            f"⏱ Setup: {resultado.get('setup_antes_horas',0):.1f}h → "
+                            f"{resultado.get('setup_despues_horas',0):.1f}h "
+                            f"({'↓ ' + str(reduccion) + '% reducción' if reduccion > 0 else 'orden óptimo'})"
                         )
                     st.cache_data.clear()
                     st.rerun()
