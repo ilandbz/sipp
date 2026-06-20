@@ -656,3 +656,120 @@ async def eliminar_semana(id: int,
     except Exception as e:
         await db.rollback()
         raise HTTPException(500, f"Error: {str(e)}")
+
+@router.patch("/secuencias/{secuencia_id}/estado")
+async def actualizar_estado_secuencia(
+    secuencia_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Cambia el estado de una secuencia (OF en cola).
+    body: {"estado": "EN_PROCESO" | "COMPLETADA" | "PENDIENTE" | "BLOQUEADA",
+           "fin_real": "2026-06-20T10:30:00" (opcional, solo para COMPLETADA)}
+    """
+    nuevo_estado = body.get("estado")
+    estados_validos = ["PENDIENTE", "EN_PROCESO", "COMPLETADA", "BLOQUEADA"]
+    if nuevo_estado not in estados_validos:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Válidos: {estados_validos}")
+
+    # Obtener la secuencia con su semana y máquina
+    result = await db.execute(text("""
+        SELECT sp.id, sp.estado, sp.semana_id,
+               of.maquina_asignada_id,
+               s.estado AS estado_semana
+        FROM sipp.secuencias_produccion sp
+        JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+        JOIN sipp.semanas_programacion s ON s.id = sp.semana_id
+        WHERE sp.id = :sid
+    """), {"sid": secuencia_id})
+    seq = result.mappings().one_or_none()
+    if not seq:
+        raise HTTPException(status_code=404, detail="Secuencia no encontrada")
+
+    # Validar que semana esté EN_EJECUCION para avanzar
+    if nuevo_estado in ["EN_PROCESO", "COMPLETADA"]:
+        if seq["estado_semana"] != "EN_EJECUCION":
+            raise HTTPException(status_code=400, detail="La semana debe estar EN_EJECUCION para avanzar OFs")
+
+    # Validar que no haya otra OF EN_PROCESO en la misma máquina
+    if nuevo_estado == "EN_PROCESO":
+        result2 = await db.execute(text("""
+            SELECT COUNT(*) as cnt
+            FROM sipp.secuencias_produccion sp2
+            JOIN sipp.ordenes_fabricacion of2 ON of2.id = sp2.orden_fabricacion_id
+            WHERE sp2.semana_id = :semana_id
+              AND of2.maquina_asignada_id = :maquina_id
+              AND sp2.estado = 'EN_PROCESO'
+              AND sp2.id != :sid
+        """), {"semana_id": seq["semana_id"], "maquina_id": seq["maquina_asignada_id"], "sid": secuencia_id})
+        cnt = result2.scalar()
+        if cnt > 0:
+            raise HTTPException(status_code=400, detail="Ya hay una OF EN_PROCESO en esta máquina. Complétala antes de iniciar otra.")
+
+    now_utc = datetime.utcnow()
+    if nuevo_estado == "EN_PROCESO":
+        await db.execute(text("""
+            UPDATE sipp.secuencias_produccion
+            SET estado = 'EN_PROCESO',
+                inicio_estimado = COALESCE(inicio_estimado, :ahora),
+                updated_at = :ahora
+            WHERE id = :sid
+        """), {"sid": secuencia_id, "ahora": now_utc})
+
+    elif nuevo_estado == "COMPLETADA":
+        fin_real = body.get("fin_real")
+        fin_dt = datetime.fromisoformat(fin_real) if fin_real else now_utc
+        await db.execute(text("""
+            UPDATE sipp.secuencias_produccion
+            SET estado = 'COMPLETADA',
+                fin_estimado = :fin_dt,
+                updated_at = :ahora
+            WHERE id = :sid
+        """), {"sid": secuencia_id, "fin_dt": fin_dt, "ahora": now_utc})
+
+        # Actualizar estado de la OF también
+        await db.execute(text("""
+            UPDATE sipp.ordenes_fabricacion
+            SET estado = 'COMPLETADA', updated_at = :ahora
+            WHERE id = (
+                SELECT orden_fabricacion_id
+                FROM sipp.secuencias_produccion
+                WHERE id = :sid
+            )
+        """), {"sid": secuencia_id, "ahora": now_utc})
+
+    else:
+        await db.execute(text("""
+            UPDATE sipp.secuencias_produccion
+            SET estado = :estado, updated_at = :ahora
+            WHERE id = :sid
+        """), {"estado": nuevo_estado, "sid": secuencia_id, "ahora": now_utc})
+
+    await db.commit()
+
+    # Verificar si todas las OFs de la semana están COMPLETADAS
+    result3 = await db.execute(text("""
+        SELECT
+            COUNT(*) FILTER (WHERE estado != 'COMPLETADA') AS pendientes,
+            COUNT(*) AS total
+        FROM sipp.secuencias_produccion
+        WHERE semana_id = :semana_id
+    """), {"semana_id": seq["semana_id"]})
+    resumen = result3.mappings().one()
+    auto_cerrada = False
+    if resumen["pendientes"] == 0 and resumen["total"] > 0:
+        await db.execute(text("""
+            UPDATE sipp.semanas_programacion
+            SET estado = 'CERRADA', updated_at = :ahora
+            WHERE id = :semana_id
+        """), {"semana_id": seq["semana_id"], "ahora": now_utc})
+        await db.commit()
+        auto_cerrada = True
+
+    return {
+        "ok": True,
+        "secuencia_id": secuencia_id,
+        "nuevo_estado": nuevo_estado,
+        "semana_auto_cerrada": auto_cerrada
+    }

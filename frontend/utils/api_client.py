@@ -282,6 +282,12 @@ def get_semana_detalle(semana_id: int):
 def get_cola_semana(semana_id: int):
     return _get(f"/api/v1/semanas/{semana_id}/cola-completa")
 
+def actualizar_estado_secuencia(secuencia_id: int, estado: str, fin_real: str = None):
+    body = {"estado": estado}
+    if fin_real:
+        body["fin_real"] = fin_real
+    return _patch(f"/api/v1/semanas/secuencias/{secuencia_id}/estado", body)
+
 def eliminar_of_semana(semana_id: int, secuencia_id: int):
     return _delete(f"/api/v1/semanas/{semana_id}/secuencias/{secuencia_id}")
 
