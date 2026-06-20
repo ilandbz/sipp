@@ -251,7 +251,7 @@ async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_sessi
             of.medida_texto AS medida,
             of.cantidad_programada,
             of.unidad_medida,
-            mat.nombre AS material_nombre,
+            CONCAT(mat.tipo, ' ', mat.gramaje_min, 'gr') AS material_nombre,
             of.colores_detalle AS colores,
             sp.costo_setup_min AS setup_minutos,
             sp.motivo_setup
