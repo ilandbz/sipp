@@ -247,14 +247,14 @@ async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_sessi
             sp.posicion,
             of.maquina_asignada_id,
             m.nombre AS maquina_nombre,
-            sp.orden_fabricacion_id,
-            of.codigo_of AS of_codigo,
+            of.codigo_of,
             of.medida_texto AS medida,
             of.cantidad_programada,
             of.unidad_medida,
             mat.nombre AS material_nombre,
             of.colores_detalle AS colores,
-            sp.costo_setup_min AS setup_minutos
+            sp.costo_setup_min AS setup_minutos,
+            sp.motivo_setup
         FROM sipp.secuencias_produccion sp
         JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
         LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
@@ -271,7 +271,7 @@ async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_sessi
         if mid not in maquinas:
             maquinas[mid] = {
                 "maquina_id": mid,
-                "maquina_nombre": row["maquina_nombre"] or f"M{mid}",
+                "maquina_nombre": row["maquina_nombre"] or f"Máquina {mid}",
                 "ofs": [],
                 "transiciones": [],
                 "setup_total_min": 0
@@ -284,32 +284,31 @@ async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_sessi
             anterior = ofs[i-1]
             actual = ofs[i]
             setup_min = float(actual["setup_minutos"] or 0)
-            icc = max(0.0, 100.0 - (setup_min / 480.0 * 100.0))
-            
+            motivo = actual["motivo_setup"] or "Sin información"
+
+            # Calcular ICC desde setup_min
+            icc = max(0, round(100 - (setup_min / 480 * 100)))
+
+            # Color por severidad
             if setup_min == 0:
-                motivo = "Sin cambio"
                 color = "verde"
             elif setup_min <= 44:
-                motivo = "Cambio menor"
                 color = "verde"
             elif setup_min <= 104:
-                motivo = "Cambio de color/material"
                 color = "amarillo"
             elif setup_min < 480:
-                motivo = "Jugada corta"
                 color = "naranja"
             else:
-                motivo = "Cambio de formato completo"
                 color = "rojo"
 
             data["transiciones"].append({
-                "posicion": actual["posicion"],
-                "of_origen_codigo": anterior["of_codigo"],
-                "of_origen_medida": anterior["medida"],
-                "of_destino_codigo": actual["of_codigo"],
-                "of_destino_medida": actual["medida"],
-                "icc": int(round(icc, 0)),
-                "setup_minutos": setup_min,
+                "posicion": i,
+                "of_origen_codigo": anterior["codigo_of"],
+                "of_origen_medida": anterior["medida"] or "—",
+                "of_destino_codigo": actual["codigo_of"],
+                "of_destino_medida": actual["medida"] or "—",
+                "icc": icc,
+                "setup_minutos": int(setup_min),
                 "setup_horas": round(setup_min / 60, 2),
                 "motivo": motivo,
                 "color": color
