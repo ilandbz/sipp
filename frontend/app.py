@@ -181,6 +181,7 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         cols[8].write(str(entrega))
 
         with cols[9]:
+            st.caption(f"sid={seq_id} est={estado_seq}")
             if semana_en_ejecucion and puede_operar and seq_id:
                 if estado_seq == "PENDIENTE":
                     if st.button("▶ Iniciar", key=f"ini_{seq_id}",
