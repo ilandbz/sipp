@@ -130,93 +130,87 @@ def render_matriz_icc(semana: str = None, semana_id: int = None):
     else:
         st.info("Sin datos de compatibilidad. Ejecute el optimizador primero.")
 
-def _render_tabla_cola(cola, semana_en_ejecucion=False):
-    import pandas as pd
-    rol_usuario = st.session_state.get("rol", get_rol())
-    puede_operar = rol_usuario in ["PROGRAMADOR", "JEFE_PRODUCCION", "OPERADOR"]
+def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
+    if not cola:
+        st.info("No hay OFs asignadas a esta máquina")
+        return
 
-    # Encabezados
-    c_num, c_of, c_medida, c_cant, c_um, c_mat, c_col, c_setup, c_ent, c_accion = st.columns(
-        [0.5, 1.2, 1, 0.8, 0.5, 1.2, 1.5, 0.8, 0.8, 1.2]
-    )
-    c_num.markdown("**#**")
-    c_of.markdown("**OF**")
-    c_medida.markdown("**Medida**")
-    c_cant.markdown("**Cant.**")
-    c_um.markdown("**U.M.**")
-    c_mat.markdown("**Material**")
-    c_col.markdown("**Colores**")
-    c_setup.markdown("**Setup**")
-    c_ent.markdown("**Entrega**")
-    c_accion.markdown("**Acción**")
+    # Encabezado de columnas
+    cols_header = st.columns([0.4, 1.2, 1, 0.8, 0.5, 1.1, 1.5, 0.8, 0.8, 1.1])
+    headers = ["#", "OF", "Medida", "Cant.", "U.M.",
+               "Material", "Colores", "Setup", "Entrega", "Acción"]
+    for col, h in zip(cols_header, headers):
+        col.markdown(f"**{h}**")
+    st.divider()
 
-    for i, of in enumerate(cola):
-        col_num, col_of, col_medida, col_cant, col_um, col_mat, col_col, col_setup, col_ent, col_accion = st.columns(
-            [0.5, 1.2, 1, 0.8, 0.5, 1.2, 1.5, 0.8, 0.8, 1.2]
-        )
+    iconos_estado = {
+        "PENDIENTE": "⏳",
+        "EN_PROCESO": "🔄",
+        "COMPLETADA": "✅",
+        "BLOQUEADA": "🔒"
+    }
+
+    for of in cola:
+        seq_id = of.get("secuencia_id")
         estado_seq = of.get("estado", "PENDIENTE")
+        icono = iconos_estado.get(estado_seq, "⏳")
 
-        # Icono de estado
-        iconos = {
-            "PENDIENTE": "⏳",
-            "EN_PROCESO": "🔄",
-            "COMPLETADA": "✅",
-            "BLOQUEADA": "🔒"
-        }
-        with col_num:
-            st.write(f"{iconos.get(estado_seq, '⏳')} {of.get('posicion', i+1)}")
-        with col_of:
-            st.write(of.get("codigo_of", "—"))
-        with col_medida:
-            st.write(of.get("medida_texto", "—"))
-        with col_cant:
-            st.write(of.get("cantidad_programada", "—"))
-        with col_um:
-            st.write(of.get("unidad_medida", "—"))
-        with col_mat:
-            st.write(of.get("material", "—"))
-        with col_col:
-            st.write(of.get("colores_detalle", "—"))
-        with col_setup:
-            setup = of.get("costo_setup_min", 0)
-            if pd.notnull(setup) and float(setup) > 0:
-                st.write(f"{int(setup)} min")
-            else:
-                st.write("—")
-        with col_ent:
-            fecha_e = of.get("fecha_entrega")
-            if fecha_e and str(fecha_e) not in ["nan", "None", ""]:
-                st.write(str(fecha_e)[:10])
-            else:
-                st.write("—")
+        # Cantidad: usar cantidad_programada si existe, sino cantidad_pedido
+        cantidad = of.get("cantidad_programada") or of.get("cantidad_pedido") or "—"
+        if isinstance(cantidad, float) and cantidad == int(cantidad):
+            cantidad = int(cantidad)
 
-        # Botones de acción según estado
-        with col_accion:
-            seq_id = of.get("secuencia_id")
+        # Setup display
+        setup_min = of.get("costo_setup_min", 0) or 0
+        setup_display = f"{int(setup_min)} min" if float(setup_min) > 0 else "—"
+
+        # Entrega
+        entrega = of.get("fecha_entrega") or "—"
+        if entrega != "—" and str(entrega) not in ["nan", "None", ""]:
+            entrega = str(entrega)[:10]
+
+        cols = st.columns([0.4, 1.2, 1, 0.8, 0.5, 1.1, 1.5, 0.8, 0.8, 1.1])
+        cols[0].write(f"{icono} {of.get('posicion', '')}")
+        cols[1].write(of.get("codigo_of", "—"))
+        cols[2].write(of.get("medida_texto", "—"))
+        cols[3].write(str(cantidad))
+        cols[4].write(of.get("unidad_medida", "—"))
+        cols[5].write(of.get("material", "—"))
+        cols[6].write(of.get("colores_detalle", "—"))
+        cols[7].write(setup_display)
+        cols[8].write(str(entrega))
+
+        with cols[9]:
             if semana_en_ejecucion and puede_operar and seq_id:
                 if estado_seq == "PENDIENTE":
-                    if st.button("▶ Iniciar", key=f"iniciar_{seq_id}", type="primary"):
+                    if st.button("▶ Iniciar", key=f"ini_{seq_id}",
+                                 type="primary", use_container_width=True):
                         from utils.api_client import actualizar_estado_secuencia
                         r = actualizar_estado_secuencia(seq_id, "EN_PROCESO")
                         if r and r.get("ok"):
-                            st.success("OF iniciada")
+                            st.success("¡Iniciada!")
                             st.rerun()
                         else:
                             st.error("Error al iniciar")
                 elif estado_seq == "EN_PROCESO":
-                    if st.button("✅ Completar", key=f"completar_{seq_id}", type="primary"):
+                    if st.button("✅ Completar", key=f"comp_{seq_id}",
+                                 type="primary", use_container_width=True):
                         from utils.api_client import actualizar_estado_secuencia
                         r = actualizar_estado_secuencia(seq_id, "COMPLETADA")
                         if r and r.get("ok"):
                             if r.get("semana_auto_cerrada"):
-                                st.success("✅ OF completada — ¡Semana cerrada automáticamente!")
+                                st.success("✅ ¡Semana cerrada automáticamente!")
                             else:
-                                st.success("OF completada")
+                                st.success("¡Completada!")
                             st.rerun()
                         else:
                             st.error("Error al completar")
                 elif estado_seq == "COMPLETADA":
-                    st.write("✅ Listo")
+                    st.markdown("✅ Listo")
+            elif estado_seq == "COMPLETADA":
+                st.markdown("✅")
+            else:
+                st.markdown("—")
 
     st.caption("""
         🟢 Verde: setup ≤ 44 min (cambio menor) |
@@ -466,6 +460,9 @@ with col_cola:
 
                 tabs = st.tabs(tab_labels)
 
+                rol_usuario = st.session_state.get("rol", get_rol())
+                puede_operar = rol_usuario in ["PROGRAMADOR", "JEFE_PRODUCCION", "OPERADOR"]
+
                 for tab, maq in zip(tabs, maquinas_tabs):
                     with tab:
                         cola = todas_las_colas.get(maq["codigo"], [])
@@ -476,7 +473,7 @@ with col_cola:
                                 st.caption(f"🔘 {maq['codigo']} sin órdenes esta semana")
                         else:
                             semana_en_ejecucion = semana.get("estado") == "EN_EJECUCION"
-                            _render_tabla_cola(cola, semana_en_ejecucion)
+                            render_cola_maquina(cola, semana_en_ejecucion, puede_operar)
 
 with col_icc:
     st.subheader("Matriz de compatibilidad (ICC)")
