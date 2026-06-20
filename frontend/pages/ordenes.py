@@ -379,7 +379,33 @@ def _formulario_of(of_existente: dict = None):
             
             col_o3, col_o4 = st.columns(2)
             peso_mil = col_o3.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
-            leva_req = col_o4.text_input("Leva requerida", value=of_existente.get("leva_requerida", "") if es_ed else "", key=f"{prefix}leva_req")
+            
+            OPCIONES_LEVA = [
+                "",
+                "Leva #1 — Bolsa #1 (pequeña)",
+                "Leva #2 — Bolsa #2",
+                "Leva #3 — Bolsa #4",
+                "Leva #4 — Bolsa #5",
+                "Leva #5 — Bolsa #6",
+                "Leva #6 — Bolsa #8",
+                "Leva #7 — Bolsa #10",
+                "Leva #8 — Bolsa #12 (grande)",
+                "Leva especial — Formato no estándar",
+            ]
+            
+            leva_actual = of_existente.get("leva_requerida", "") if es_ed else ""
+            try:
+                idx_leva = OPCIONES_LEVA.index(leva_actual) if leva_actual else 0
+            except ValueError:
+                idx_leva = 0
+
+            leva_req = col_o4.selectbox(
+                "Leva requerida", 
+                options=OPCIONES_LEVA, 
+                index=idx_leva,
+                format_func=lambda x: "— Seleccionar leva —" if x == "" else x,
+                key=f"{prefix}leva_req"
+            )
             
             dist_base = st.number_input("Distancia de base (mm)", min_value=0.0, step=0.1, value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}dist_base")
             
