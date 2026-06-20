@@ -473,6 +473,8 @@ with col_cola:
                                 st.caption(f"🔘 {maq['codigo']} sin órdenes esta semana")
                         else:
                             semana_en_ejecucion = kpi_data.get("estado") == "EN_EJECUCION" if kpi_data else False
+                            # DEBUG TEMPORAL - borrar después
+                            st.caption(f"🔧 DEBUG: estado={kpi_data.get('estado') if kpi_data else 'kpi_data=None'} | en_ejecucion={semana_en_ejecucion} | puede_operar={puede_operar} | rol={rol_usuario}")
                             render_cola_maquina(cola, semana_en_ejecucion, puede_operar)
 
 with col_icc:
