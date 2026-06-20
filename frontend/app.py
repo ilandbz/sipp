@@ -150,6 +150,17 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         "BLOQUEADA": "🔒"
     }
 
+    # Determinar qué OF es la primera PENDIENTE (única que puede iniciarse)
+    primera_pendiente_id = None
+    hay_en_proceso = False
+    for of in cola:
+        estado_of = of.get("estado", "PENDIENTE")
+        if estado_of == "EN_PROCESO":
+            hay_en_proceso = True
+            break
+        if estado_of == "PENDIENTE" and primera_pendiente_id is None:
+            primera_pendiente_id = of.get("secuencia_id")
+
     for of in cola:
         seq_id = of.get("secuencia_id")
         estado_seq = of.get("estado", "PENDIENTE")
@@ -181,8 +192,30 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         cols[8].write(str(entrega))
 
         with cols[9]:
-            if semana_en_ejecucion and puede_operar and seq_id:
-                if estado_seq == "PENDIENTE":
+            if not semana_en_ejecucion or not puede_operar or not seq_id:
+                st.markdown("—")
+            elif estado_seq == "COMPLETADA":
+                st.markdown("✅ Listo")
+            elif estado_seq == "EN_PROCESO":
+                # Esta OF está en proceso → mostrar Completar
+                if st.button("✅ Completar", key=f"comp_{seq_id}",
+                             type="primary", use_container_width=True):
+                    from utils.api_client import actualizar_estado_secuencia
+                    r = actualizar_estado_secuencia(seq_id, "COMPLETADA")
+                    if r and r.get("ok"):
+                        if r.get("semana_auto_cerrada"):
+                            st.success("✅ ¡Semana cerrada automáticamente!")
+                        else:
+                            st.success("¡Completada!")
+                        st.rerun()
+                    else:
+                        st.error("Error al completar")
+            elif estado_seq == "PENDIENTE":
+                if hay_en_proceso:
+                    # Ya hay una OF en proceso en esta máquina → bloquear
+                    st.markdown("⏸ Esperando")
+                elif seq_id == primera_pendiente_id:
+                    # Es la primera pendiente → puede iniciarse
                     if st.button("▶ Iniciar", key=f"ini_{seq_id}",
                                  type="primary", use_container_width=True):
                         from utils.api_client import actualizar_estado_secuencia
@@ -192,23 +225,9 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
                             st.rerun()
                         else:
                             st.error("Error al iniciar")
-                elif estado_seq == "EN_PROCESO":
-                    if st.button("✅ Completar", key=f"comp_{seq_id}",
-                                 type="primary", use_container_width=True):
-                        from utils.api_client import actualizar_estado_secuencia
-                        r = actualizar_estado_secuencia(seq_id, "COMPLETADA")
-                        if r and r.get("ok"):
-                            if r.get("semana_auto_cerrada"):
-                                st.success("✅ ¡Semana cerrada automáticamente!")
-                            else:
-                                st.success("¡Completada!")
-                            st.rerun()
-                        else:
-                            st.error("Error al completar")
-                elif estado_seq == "COMPLETADA":
-                    st.markdown("✅ Listo")
-            elif estado_seq == "COMPLETADA":
-                st.markdown("✅")
+                else:
+                    # Es una OF posterior → bloqueada hasta que llegue su turno
+                    st.markdown("🔒 En cola")
             else:
                 st.markdown("—")
 
