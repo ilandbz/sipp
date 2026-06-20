@@ -234,7 +234,13 @@ def _formulario_of(of_existente: dict = None):
     for m in maquinas:
         maq_opciones[m["codigo"]] = m["id"]
     cli_opciones = {c["razon_social"]: c["id"] for c in clientes}
-    mat_opciones = {m["tipo"]: m["id"] for m in materiales}
+    mat_opciones = {}
+    materiales_gramaje = {}
+    for m in materiales:
+        nombre = m.get("tipo") or m.get("nombre", "")
+        mid = m.get("id")
+        mat_opciones[nombre] = mid
+        materiales_gramaje[mid] = float(m.get("gramaje_min") or 0.0)
     cil_opciones = {str(c["codigo"]): c["id"] for c in cilindros}
     bolsa_opciones = {str(tb["numero"]): tb["id"] for tb in tipos_bolsa}
     
@@ -341,6 +347,8 @@ def _formulario_of(of_existente: dict = None):
             col_m1.caption("💡 La máquina sugerida se calcula automáticamente al guardar si dejas 'Asignar automáticamente'")
             
         mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat, key=f"{prefix}mat_sel")
+        mat_sel_id = mat_opciones.get(mat_sel)
+        gramaje_auto = materiales_gramaje.get(mat_sel_id, 0.0)
         bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
         cil_sel = col_m4.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil, key=f"{prefix}cil_sel")
         
@@ -375,7 +383,9 @@ def _formulario_of(of_existente: dict = None):
         with st.expander("➕ Datos adicionales"):
             col_o1, col_o2 = st.columns(2)
             codigo_pt = col_o1.text_input("Código PT", value=of_existente.get("codigo_pt", "") if es_ed else "", key=f"{prefix}codigo_pt")
-            gramaje = col_o2.number_input("Gramaje", min_value=0.0, step=1.0, value=float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0, key=f"{prefix}gramaje")
+            gramaje_prev = float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0
+            gramaje_val = gramaje_auto if gramaje_auto > 0 else gramaje_prev
+            gramaje = col_o2.number_input("Gramaje", min_value=0.0, step=1.0, value=float(gramaje_val), key=f"{prefix}gramaje_{mat_sel_id}")
             
             col_o3, col_o4 = st.columns(2)
             peso_mil = col_o3.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
