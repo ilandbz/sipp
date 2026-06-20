@@ -340,6 +340,62 @@ with col4:
 
 st.divider()
 
+with st.expander("🔍 Ver desglose de Setup Total", expanded=False):
+    try:
+        if semana_sel:
+            from utils.api_client import get_setup_detalle
+            detalle = get_setup_detalle(semana_sel)
+            if detalle:
+                st.markdown(f"**Setup Grand Total: {detalle['setup_grand_total_horas']}h "
+                           f"({detalle['setup_grand_total_min']} min)**")
+                st.divider()
+                
+                for maq in detalle["por_maquina"]:
+                    st.markdown(f"#### 🏭 {maq['maquina_nombre']} — "
+                               f"{maq['setup_total_horas']}h | "
+                               f"{maq['n_ofs']} OFs | "
+                               f"{maq['n_transiciones']} transiciones")
+                    
+                    if maq["transiciones"]:
+                        import pandas as pd
+                        df = pd.DataFrame(maq["transiciones"])
+                        df = df.rename(columns={
+                            "posicion": "Pos",
+                            "of_origen_codigo": "OF Origen",
+                            "of_origen_medida": "Medida Origen",
+                            "of_destino_codigo": "OF Destino",
+                            "of_destino_medida": "Medida Destino",
+                            "icc": "ICC",
+                            "setup_minutos": "Min",
+                            "setup_horas": "Horas",
+                            "motivo": "Motivo"
+                        })
+                        df = df.drop(columns=["color"])
+                        
+                        # Colorear por severidad del setup
+                        def color_setup(val):
+                            if val <= 44:
+                                return "background-color: #1b5e20; color: white"
+                            elif val <= 104:
+                                return "background-color: #f9a825; color: black"
+                            elif val < 480:
+                                return "background-color: #e65100; color: white"
+                            else:
+                                return "background-color: #b71c1c; color: white"
+                        
+                        styled = df.style.map(color_setup, subset=["Min"])
+                        st.dataframe(styled, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Solo 1 OF asignada — sin transiciones")
+                    
+                    st.divider()
+            else:
+                st.warning("No se pudo cargar el detalle de setup")
+        else:
+            st.info("Selecciona una semana para ver el detalle")
+    except Exception as e:
+        st.error(f"Error cargando detalle: {e}")
+
 # ── Cuerpo: Cola de máquinas | Matriz ICC ─────────────────
 col_cola, col_icc = st.columns([3, 2])
 

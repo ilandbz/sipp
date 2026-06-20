@@ -239,3 +239,101 @@ async def max_icc_con_ofs_de_semana(semana_id: int, of_id: int, db: AsyncSession
     res = await db.execute(query, {"of_id": of_id, "semana_id": semana_id})
     val = res.scalar()
     return {"max_icc": float(val) if val else 0.0}
+
+@router.get("/semana/{semana_id}/setup-detalle")
+async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_session)):
+    query = text("""
+        SELECT 
+            sp.posicion,
+            of.maquina_asignada_id,
+            m.nombre AS maquina_nombre,
+            sp.orden_fabricacion_id,
+            of.codigo_of AS of_codigo,
+            of.medida_texto AS medida,
+            of.cantidad_programada,
+            of.unidad_medida,
+            mat.nombre AS material_nombre,
+            of.colores_detalle AS colores,
+            sp.costo_setup_min AS setup_minutos
+        FROM sipp.secuencias_produccion sp
+        JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
+        LEFT JOIN sipp.maquinas m ON m.id = of.maquina_asignada_id
+        LEFT JOIN sipp.materiales mat ON mat.id = of.material_id
+        WHERE sp.semana_id = :semana_id
+        ORDER BY of.maquina_asignada_id, sp.posicion
+    """)
+    result = await db.execute(query, {"semana_id": semana_id})
+    rows = result.mappings().all()
+
+    maquinas = {}
+    for row in rows:
+        mid = row["maquina_asignada_id"]
+        if mid not in maquinas:
+            maquinas[mid] = {
+                "maquina_id": mid,
+                "maquina_nombre": row["maquina_nombre"] or f"M{mid}",
+                "ofs": [],
+                "transiciones": [],
+                "setup_total_min": 0
+            }
+        maquinas[mid]["ofs"].append(dict(row))
+
+    for mid, data in maquinas.items():
+        ofs = data["ofs"]
+        for i in range(1, len(ofs)):
+            anterior = ofs[i-1]
+            actual = ofs[i]
+            setup_min = float(actual["setup_minutos"] or 0)
+            icc = max(0.0, 100.0 - (setup_min / 480.0 * 100.0))
+            
+            if setup_min == 0:
+                motivo = "Sin cambio"
+                color = "verde"
+            elif setup_min <= 44:
+                motivo = "Cambio menor"
+                color = "verde"
+            elif setup_min <= 104:
+                motivo = "Cambio de color/material"
+                color = "amarillo"
+            elif setup_min < 480:
+                motivo = "Jugada corta"
+                color = "naranja"
+            else:
+                motivo = "Cambio de formato completo"
+                color = "rojo"
+
+            data["transiciones"].append({
+                "posicion": actual["posicion"],
+                "of_origen_codigo": anterior["of_codigo"],
+                "of_origen_medida": anterior["medida"],
+                "of_destino_codigo": actual["of_codigo"],
+                "of_destino_medida": actual["medida"],
+                "icc": int(round(icc, 0)),
+                "setup_minutos": setup_min,
+                "setup_horas": round(setup_min / 60, 2),
+                "motivo": motivo,
+                "color": color
+            })
+            data["setup_total_min"] += setup_min
+
+    resumen = []
+    grand_total_min = 0
+    for mid, data in maquinas.items():
+        subtotal = data["setup_total_min"]
+        grand_total_min += subtotal
+        resumen.append({
+            "maquina_id": mid,
+            "maquina_nombre": data["maquina_nombre"],
+            "n_ofs": len(data["ofs"]),
+            "n_transiciones": len(data["transiciones"]),
+            "setup_total_min": subtotal,
+            "setup_total_horas": round(subtotal / 60, 2),
+            "transiciones": data["transiciones"]
+        })
+
+    return {
+        "semana_id": semana_id,
+        "setup_grand_total_min": grand_total_min,
+        "setup_grand_total_horas": round(grand_total_min / 60, 2),
+        "por_maquina": resumen
+    }
