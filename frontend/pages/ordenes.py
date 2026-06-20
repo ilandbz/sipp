@@ -335,13 +335,14 @@ def _formulario_of(of_existente: dict = None):
             key=f"{prefix}medida_texto"
         )
         
-        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         maq_sel = col_m1.selectbox("Máquina", list(maq_opciones.keys()), index=idx_maq, key=f"{prefix}maq_sel")
         if es_ed:
             col_m1.caption("💡 La máquina sugerida se calcula automáticamente al guardar si dejas 'Asignar automáticamente'")
             
         mat_sel = col_m2.selectbox("Material *", list(mat_opciones.keys()), index=idx_mat, key=f"{prefix}mat_sel")
         bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
+        cil_sel = col_m4.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil, key=f"{prefix}cil_sel")
         
         st.write("**Medida (mm) ***")
         col_dim1, col_dim2, col_dim3 = st.columns(3)
@@ -356,13 +357,14 @@ def _formulario_of(of_existente: dict = None):
         fuelle = col_dim3.number_input("Fuelle (mm)", min_value=0.0, step=0.5, value=fuelle_val if fuelle_val > 0 else None, placeholder="ej: 10.0", key=f"{prefix}fuelle")
         
         col_c1, col_c2, col_c3 = st.columns(3)
-        colores_det = col_c1.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "", key=f"{prefix}colores_det")
-        cant_prog = col_c2.number_input("Cantidad a producir (Millares) *", min_value=0.0, step=0.1, value=float(of_existente.get("cantidad_programada") or 0.0) if es_ed else 0.0, key=f"{prefix}cant_prog")
+        num_colores = col_c1.number_input("Número de colores", min_value=0, max_value=6, step=1, value=int(of_existente.get("num_colores") or 0) if es_ed else 0, key=f"{prefix}num_colores")
+        colores_det = col_c2.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "", key=f"{prefix}colores_det")
         fecha_entrega = col_c3.date_input("Fecha de entrega *", value=val_entrega, key=f"{prefix}fecha_entrega")
         
-        col_c4, col_c5 = st.columns(2)
-        cli_sel = col_c4.selectbox("Cliente", ["Sin cliente"] + list(cli_opciones.keys()), index=idx_cli, key=f"{prefix}cli_sel")
-        prioridad_sel = col_c5.selectbox(
+        col_c4, col_c5, col_c6 = st.columns(3)
+        cant_prog = col_c4.number_input("Cantidad a producir (Millares) *", min_value=0.0, step=0.1, value=float(of_existente.get("cantidad_programada") or 0.0) if es_ed else 0.0, key=f"{prefix}cant_prog")
+        cli_sel = col_c5.selectbox("Cliente", ["Sin cliente"] + list(cli_opciones.keys()), index=idx_cli, key=f"{prefix}cli_sel")
+        prioridad_sel = col_c6.selectbox(
             "Urgencia del pedido *", 
             ["1 - Alta", "2 - Media", "3 - Baja"], 
             index=idx_prio,
@@ -373,15 +375,11 @@ def _formulario_of(of_existente: dict = None):
         with st.expander("➕ Datos adicionales"):
             col_o1, col_o2 = st.columns(2)
             codigo_pt = col_o1.text_input("Código PT", value=of_existente.get("codigo_pt", "") if es_ed else "", key=f"{prefix}codigo_pt")
-            cil_sel = col_o2.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil, key=f"{prefix}cil_sel")
+            gramaje = col_o2.number_input("Gramaje", min_value=0.0, step=1.0, value=float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0, key=f"{prefix}gramaje")
             
             col_o3, col_o4 = st.columns(2)
-            gramaje = col_o3.number_input("Gramaje", min_value=0.0, step=1.0, value=float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0, key=f"{prefix}gramaje")
-            num_colores = col_o4.number_input("Número de colores", min_value=0, max_value=6, step=1, value=int(of_existente.get("num_colores") or 0) if es_ed else 0, key=f"{prefix}num_colores")
-            
-            col_o5, col_o6 = st.columns(2)
-            peso_mil = col_o5.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
-            leva_req = col_o6.text_input("Leva requerida", value=of_existente.get("leva_requerida", "") if es_ed else "", key=f"{prefix}leva_req")
+            peso_mil = col_o3.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
+            leva_req = col_o4.text_input("Leva requerida", value=of_existente.get("leva_requerida", "") if es_ed else "", key=f"{prefix}leva_req")
             
             dist_base = st.number_input("Distancia de base (mm)", min_value=0.0, step=0.1, value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}dist_base")
             
