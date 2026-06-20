@@ -472,7 +472,7 @@ with col_cola:
                             else:
                                 st.caption(f"🔘 {maq['codigo']} sin órdenes esta semana")
                         else:
-                            semana_en_ejecucion = semana.get("estado") == "EN_EJECUCION"
+                            semana_en_ejecucion = kpi_data.get("estado") == "EN_EJECUCION" if kpi_data else False
                             render_cola_maquina(cola, semana_en_ejecucion, puede_operar)
 
 with col_icc:
