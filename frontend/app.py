@@ -14,6 +14,206 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+/* ── Fuente global ── */
+html, body, [class*="css"] {
+    font-family: 'Segoe UI', Arial, sans-serif !important;
+}
+
+/* ── Header superior de Streamlit ── */
+header[data-testid="stHeader"] {
+    background-color: #1B4D2E !important;
+    border-bottom: 3px solid #4CAF50;
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background-color: #1B4D2E !important;
+    border-right: 3px solid #4CAF50;
+}
+[data-testid="stSidebar"] * {
+    color: #FFFFFF !important;
+}
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stCaption {
+    color: #C8E6C9 !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: #4CAF50 !important;
+    opacity: 0.4;
+}
+[data-testid="stSidebar"] a {
+    color: #A5D6A7 !important;
+}
+[data-testid="stSidebar"] a:hover {
+    color: #FFFFFF !important;
+}
+
+/* ── Botones primarios ── */
+.stButton > button[kind="primary"] {
+    background-color: #2E7D32 !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    transition: background-color 0.2s;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #1B4D2E !important;
+}
+
+/* ── Botones secundarios ── */
+.stButton > button[kind="secondary"] {
+    background-color: #FFFFFF !important;
+    color: #2E7D32 !important;
+    border: 2px solid #2E7D32 !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    background-color: #E8F5E9 !important;
+}
+
+/* ── KPI Metrics ── */
+[data-testid="stMetric"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E0E0E0 !important;
+    border-left: 4px solid #2E7D32 !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
+}
+[data-testid="stMetricValue"] {
+    color: #1B4D2E !important;
+    font-weight: 700 !important;
+}
+[data-testid="stMetricLabel"] {
+    color: #616161 !important;
+    font-size: 0.85rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* ── Tablas / Dataframes ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid #E0E0E0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+
+/* ── Expanders ── */
+[data-testid="stExpander"] {
+    border: 1px solid #E0E0E0 !important;
+    border-radius: 8px !important;
+    background-color: #FFFFFF !important;
+}
+[data-testid="stExpander"] summary {
+    background-color: #F5F7F5 !important;
+    color: #1B4D2E !important;
+    font-weight: 600 !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background-color: #F5F7F5 !important;
+    border-radius: 8px 8px 0 0 !important;
+    border-bottom: 2px solid #E0E0E0 !important;
+    gap: 4px !important;
+    padding: 4px 4px 0 4px !important;
+}
+.stTabs [data-baseweb="tab"] {
+    background-color: transparent !important;
+    color: #616161 !important;
+    font-weight: 500 !important;
+    border-radius: 6px 6px 0 0 !important;
+    padding: 8px 16px !important;
+}
+.stTabs [aria-selected="true"] {
+    background-color: #FFFFFF !important;
+    color: #1B4D2E !important;
+    font-weight: 700 !important;
+    border-bottom: 3px solid #2E7D32 !important;
+}
+
+/* ── Inputs y Selectbox ── */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] > div > div {
+    border: 1px solid #E0E0E0 !important;
+    border-radius: 6px !important;
+    background-color: #FFFFFF !important;
+    color: #212121 !important;
+}
+[data-testid="stTextInput"] input:focus,
+[data-testid="stNumberInput"] input:focus {
+    border-color: #2E7D32 !important;
+    box-shadow: 0 0 0 2px rgba(46,125,50,0.15) !important;
+}
+
+/* ── Info / Warning / Error boxes ── */
+[data-testid="stInfo"] {
+    background-color: #E8F5E9 !important;
+    border-left: 4px solid #2E7D32 !important;
+    color: #1B4D2E !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+[data-testid="stWarning"] {
+    background-color: #FFF8E1 !important;
+    border-left: 4px solid #F9A825 !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+[data-testid="stError"] {
+    background-color: #FFEBEE !important;
+    border-left: 4px solid #C62828 !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+[data-testid="stSuccess"] {
+    background-color: #E8F5E9 !important;
+    border-left: 4px solid #2E7D32 !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+
+/* ── Dividers ── */
+hr {
+    border-color: #E0E0E0 !important;
+    margin: 16px 0 !important;
+}
+
+/* ── Títulos ── */
+h1, h2, h3 {
+    color: #1B4D2E !important;
+    font-weight: 700 !important;
+}
+h1 { border-bottom: 3px solid #4CAF50; padding-bottom: 8px; }
+
+/* ── Caption y texto pequeño ── */
+.stCaption, small {
+    color: #616161 !important;
+}
+
+/* ── Spinner ── */
+[data-testid="stSpinner"] {
+    color: #2E7D32 !important;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F5F7F5; }
+::-webkit-scrollbar-thumb {
+    background: #A5D6A7;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: #2E7D32; }
+
+/* ── KPI Setup en rojo cuando es alto ── */
+.setup-alto { color: #C62828 !important; font-weight: 700; }
+.setup-ok   { color: #2E7D32 !important; font-weight: 700; }
+</style>
+""", unsafe_allow_html=True)
+
+
 # Intentar restaurar sesión desde cookie PRIMERO
 restaurar_sesion()
 
@@ -22,39 +222,63 @@ if not is_logged_in():
     st.markdown("""
     <style>
     [data-testid="stApp"] {
-        background: linear-gradient(135deg, #0f1923 0%, #1a2e1a 100%);
+        background: linear-gradient(135deg, #F5F7F5 0%, #E8F5E9 100%);
     }
     </style>
     """, unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
+
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
-        st.markdown("---")
-        # Logo si existe
+        # Logo
         logo = Path(__file__).parent / "static" / "logo_vygpack.png"
         if logo.exists():
-            st.image(str(logo), width=200)
+            st.image(str(logo), width=220)
         else:
-            st.markdown("# 🏭 SIPP")
-        
-        st.markdown("### Sistema de Programación de Producción")
-        st.markdown("**VYGPACK**")
-        st.markdown("---")
-        
+            st.markdown("""
+            <div style='text-align:center; padding:20px 0'>
+                <div style='background:#1B4D2E; color:white; padding:16px 24px;
+                            border-radius:8px; font-size:1.8rem; font-weight:700;
+                            letter-spacing:2px; display:inline-block'>
+                    🌿 VYGPACK
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style='background:#FFFFFF; border-radius:12px; padding:32px;
+                    box-shadow:0 4px 20px rgba(27,77,46,0.15);
+                    border-top:4px solid #2E7D32; margin-top:16px'>
+            <h2 style='color:#1B4D2E; text-align:center; margin-bottom:4px;
+                       font-size:1.3rem'>
+                Sistema de Programación de Producción
+            </h2>
+            <p style='color:#616161; text-align:center; font-size:0.9rem;
+                      margin-bottom:24px'>
+                SIPP — Acceso restringido al personal autorizado
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
         with st.form("login_form"):
             usuario = st.text_input("👤 Usuario")
             clave   = st.text_input("🔒 Contraseña", type="password")
-            entrar  = st.form_submit_button("Iniciar Sesión",
-                        type="primary", use_container_width=True)
-        
+            entrar  = st.form_submit_button(
+                "Iniciar Sesión",
+                type="primary",
+                use_container_width=True
+            )
         if entrar:
             if login(usuario, clave):
                 st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
-        
-        st.markdown("---")
-        st.caption("© 2026 VYGPACK — Acceso restringido al personal autorizado")
-    st.stop()
+
+        st.markdown("""
+        <div style='text-align:center; margin-top:16px'>
+            <small style='color:#9E9E9E'>© 2026 VYGPACK — Lima, Perú</small>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
 
 def opciones_semanas():
     semanas = get_semanas() or []
@@ -189,7 +413,7 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         if not descripcion_corta:
             descripcion_corta = "—"
         cols[2].markdown(
-            f'<span title="{descripcion_completa}" style="cursor:help; color:#ccc">'
+            f'<span title="{descripcion_completa}" style="cursor:help; color:#616161">'
             f'{descripcion_corta}</span>',
             unsafe_allow_html=True
         )
@@ -298,9 +522,9 @@ else:
         if id_ == semana_sel:
             semana_label = label
             break
-    semana_info = st.session_state.get("semana_info", {})
-    fecha_i = semana_info.get("fecha_inicio", "")
-    fecha_f = semana_info.get("fecha_fin", "")
+    fecha_i = kpi_data.get("fecha_inicio", "") if kpi_data else ""
+    fecha_f = kpi_data.get("fecha_fin", "") if kpi_data else ""
+    estado_semana = kpi_data.get("estado", "BORRADOR") if kpi_data else "BORRADOR"
 
     if fecha_i and fecha_f:
         try:
@@ -314,18 +538,21 @@ else:
         titulo_semana = semana_label
 
     st.markdown(f"""
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-        <span style="font-size:2rem;">🏭</span>
-        <div>
-            <div style="font-size:1.4rem; font-weight:600; color:#F0F4F0;">
-                {titulo_semana}
-            </div>
-            <div style="font-size:0.8rem; color:#4CAF50;">
-                VYGPACK — Sistema Inteligente de Programación de Producción
-            </div>
+<div style='background:#1B4D2E; color:white; padding:16px 24px;
+            border-radius:8px; margin-bottom:16px;
+            border-left:6px solid #4CAF50;
+            display:flex; align-items:center; gap:16px'>
+    <div>
+        <div style='font-size:0.8rem; color:#A5D6A7;
+                    text-transform:uppercase; letter-spacing:0.1em'>
+            VYGPACK — Sistema Inteligente de Programación de Producción
+        </div>
+        <div style='font-size:1.3rem; font-weight:700; margin-top:4px'>
+            🌐 {titulo_semana} ({estado_semana})
         </div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
 if get_rol() in ["PROGRAMADOR", "JEFE_PRODUCCION"]:
     st.info(
@@ -340,16 +567,17 @@ if "optimizer_success_msg" in st.session_state:
 st.markdown("""
 <style>
 .kpi-card {
-    background: linear-gradient(135deg, #1a2632 0%, #243447 100%);
-    border: 1px solid #2d4a3e;
-    border-radius: 12px;
-    padding: 16px 20px;
+    background-color: #FFFFFF !important;
+    border: 1px solid #E0E0E0 !important;
+    border-left: 4px solid #2E7D32 !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
     text-align: center;
 }
-.kpi-valor { font-size: 2rem; font-weight: 700; color: #4CAF50; }
-.kpi-label { font-size: 0.75rem; color: #8a9ba8; text-transform: uppercase; 
+.kpi-valor { font-size: 2rem; font-weight: 700; color: #1B4D2E; }
+.kpi-label { font-size: 0.75rem; color: #616161; text-transform: uppercase; 
              letter-spacing: 0.05em; margin-top: 4px; }
-.kpi-delta { font-size: 0.8rem; color: #81C784; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -361,20 +589,20 @@ with col1:
         <div class="kpi-label">📦 OFs Programadas</div>
     </div>""", unsafe_allow_html=True)
 with col2:
-    color_setup = "#ef5350" if setup_horas > 20 else "#FFA726" if setup_horas > 10 else "#4CAF50"
+    color_setup = "#C62828" if setup_horas > 20 else "#E65100" if setup_horas > 10 else "#2E7D32"
     st.markdown(f"""<div class="kpi-card">
         <div class="kpi-valor" style="color:{color_setup}">{setup_horas:.1f}h</div>
         <div class="kpi-label">⏱ Setup Total</div>
     </div>""", unsafe_allow_html=True)
 with col3:
-    color_util = "#ef5350" if utilizacion > 100 else "#FFA726" if utilizacion > 85 else "#4CAF50"
+    color_util = "#C62828" if utilizacion > 100 else "#E65100" if utilizacion > 85 else "#2E7D32"
     st.markdown(f"""<div class="kpi-card">
         <div class="kpi-valor" style="color:{color_util}">{utilizacion:.1f}%</div>
         <div class="kpi-label">📊 Utilización</div>
     </div>""", unsafe_allow_html=True)
 with col4:
     st.markdown(f"""<div class="kpi-card">
-        <div class="kpi-valor">3</div>
+        <div class="kpi-valor" style="color:#1B4D2E">3</div>
         <div class="kpi-label">🏭 Máquinas M8·M10·M14</div>
     </div>""", unsafe_allow_html=True)
 

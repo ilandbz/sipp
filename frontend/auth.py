@@ -110,6 +110,24 @@ def render_sidebar(opciones_semanas: list = None) -> str | None:
     Renderiza el sidebar completo y retorna la semana seleccionada.
     opciones_semanas: lista de strings con las semanas disponibles
     """
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] .stButton > button {
+        background-color: rgba(255,255,255,0.1) !important;
+        color: #FFFFFF !important;
+        border: 1px solid rgba(255,255,255,0.3) !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background-color: rgba(255,255,255,0.2) !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox > div > div {
+        background-color: rgba(255,255,255,0.1) !important;
+        color: #FFFFFF !important;
+        border-color: rgba(255,255,255,0.3) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     from pathlib import Path
     
     logo = Path(__file__).parent / "static" / "logo_vygpack.png"

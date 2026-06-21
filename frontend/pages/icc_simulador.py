@@ -206,7 +206,7 @@ with col_d1:
     for campo, label in zip(campos, labels):
         val = of_a.get(campo, "—") or "—"
         mismo = of_a.get(campo) == of_b.get(campo)
-        color = "" if mismo else "color:orange"
+        color = "" if mismo else "color:#E65100"
         st.markdown(f"<span style='font-size:13px;color:var(--color-text-secondary)'>{label}:</span> "
                    f"<span style='{color}'>{val}</span>", unsafe_allow_html=True)
 with col_d2:
@@ -214,7 +214,7 @@ with col_d2:
     for campo, label in zip(campos, labels):
         val = of_b.get(campo, "—") or "—"
         mismo = of_a.get(campo) == of_b.get(campo)
-        color = "" if mismo else "color:orange"
+        color = "" if mismo else "color:#E65100"
         st.markdown(f"<span style='font-size:13px;color:var(--color-text-secondary)'>{label}:</span> "
                    f"<span style='{color}'>{val}</span>", unsafe_allow_html=True)
 
