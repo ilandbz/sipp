@@ -126,20 +126,26 @@ with tab_setup:
             "Máquina", "Posición", "OF", "Setup (min)", "Motivo de Setup"
         ]
         
-        def colorear_severidad(row):
-            # Asignar color según los minutos de setup
-            val = row["Setup (min)"]
-            color = ""
-            if val > 120:
-                color = "background-color: #f8d7da; color: #721c24;" # Rojo
-            elif val > 45:
-                color = "background-color: #fff3cd; color: #856404;" # Amarillo
+        if "Setup (min)" in df_setup_show.columns:
+            df_setup_show["Setup (min)"] = pd.to_numeric(df_setup_show["Setup (min)"], errors="coerce").fillna(0)
+            
+        def colorear_severidad(val):
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                return ""
+            if v <= 0:
+                return ""
+            elif v <= 90:
+                return "background-color: #1b5e20; color: white"
+            elif v <= 300:
+                return "background-color: #f9a825; color: black"
+            elif v <= 480:
+                return "background-color: #e65100; color: white"
             else:
-                color = "background-color: #d4edda; color: #155724;" # Verde
+                return "background-color: #b71c1c; color: white"
             
-            return [color] * len(row)
-            
-        styled_setup = df_setup_show.style.apply(colorear_severidad, axis=1)
+        styled_setup = df_setup_show.style.map(colorear_severidad, subset=["Setup (min)"])
         st.dataframe(styled_setup, width='stretch', hide_index=True)
 
 # ─────────────────────────────────────────────────────────
