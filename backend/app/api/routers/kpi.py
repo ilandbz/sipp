@@ -41,47 +41,69 @@ async def kpi_por_semana(semana_id: int,
         return {"total_ofs": 0, "setup_total_horas": 0, "utilizacion_pct": 0}
     return dict(row)
 
-@router.get("/semanal", response_model=List[KpiSemanalRead])
-async def kpi_semanal(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
-    query = "SELECT k.* FROM sipp.v_kpi_semanal k"
+@router.get("/semanal", response_model=List[dict])
+async def kpi_semanal(
+    semana: str | None = None,
+    semana_id: int | None = None,
+    db: AsyncSession = Depends(get_session)
+):
     params = {}
     if semana_id:
-        query += " JOIN sipp.maquinas m ON m.codigo = k.maquina JOIN sipp.semanas_programacion s ON s.fecha_inicio = k.fecha_inicio AND s.maquina_id = m.id WHERE s.id = :semana_id"
+        query = text("""
+            SELECT * FROM sipp.v_kpi_semanal
+            WHERE semana_id = :semana_id
+            ORDER BY maquina
+        """)
         params["semana_id"] = semana_id
     elif semana:
         try:
             year, week_num = map(int, semana.split("-W"))
             fecha_inicio = date.fromisocalendar(year, week_num, 1)
-            query += " WHERE k.fecha_inicio = :fecha_inicio"
+            query = text("""
+                SELECT * FROM sipp.v_kpi_semanal
+                WHERE fecha_inicio = :fecha_inicio
+                ORDER BY maquina
+            """)
             params["fecha_inicio"] = fecha_inicio
         except ValueError:
             return []
-    query += " ORDER BY k.maquina"
-    
-    result = await db.execute(text(query), params)
+    else:
+        return []
+    result = await db.execute(query, params)
     rows = result.mappings().all()
-    return rows
+    return [dict(r) for r in rows]
 
-@router.get("/plan-semanal", response_model=List[PlanSemanalRead])
-async def kpi_plan_semanal(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):
-    query = "SELECT k.* FROM sipp.v_plan_semanal k"
+@router.get("/plan-semanal", response_model=List[dict])
+async def kpi_plan_semanal(
+    semana: str | None = None,
+    semana_id: int | None = None,
+    db: AsyncSession = Depends(get_session)
+):
     params = {}
     if semana_id:
-        query += " JOIN sipp.maquinas m ON m.codigo = k.maquina JOIN sipp.semanas_programacion s ON s.fecha_inicio = k.semana_inicio AND s.maquina_id = m.id WHERE s.id = :semana_id"
+        query = text("""
+            SELECT * FROM sipp.v_plan_semanal
+            WHERE semana_id = :semana_id
+            ORDER BY maquina, posicion
+        """)
         params["semana_id"] = semana_id
     elif semana:
         try:
             year, week_num = map(int, semana.split("-W"))
             fecha_inicio = date.fromisocalendar(year, week_num, 1)
-            query += " WHERE k.semana_inicio = :fecha_inicio"
+            query = text("""
+                SELECT * FROM sipp.v_plan_semanal
+                WHERE semana_inicio = :fecha_inicio
+                ORDER BY maquina, posicion
+            """)
             params["fecha_inicio"] = fecha_inicio
         except ValueError:
             return []
-    query += " ORDER BY k.maquina, k.posicion"
-    
-    result = await db.execute(text(query), params)
+    else:
+        return []
+    result = await db.execute(query, params)
     rows = result.mappings().all()
-    return rows
+    return [dict(r) for r in rows]
 
 @router.get("/icc_matrix", response_model=IccMatrixResponse)
 async def kpi_icc_matrix(semana: str | None = None, semana_id: int | None = None, db: AsyncSession = Depends(get_session)):

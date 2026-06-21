@@ -17,13 +17,23 @@ st.set_page_config(layout="wide", page_title="SIPP — Reportes", page_icon="�
 render_sidebar()
 
 def opciones_semanas():
-    today = datetime.date.today()
-    weeks = []
-    for i in range(-5, 10):
-        d = today + datetime.timedelta(weeks=i)
-        year, week_num, _ = d.isocalendar()
-        weeks.append(f"{year}-W{week_num:02d}")
-    return sorted(list(set(weeks)))
+    semanas = get_semanas() or []
+    opciones = {}
+    for s in semanas:
+        es_global = s.get("es_global", False)
+        maquina = "🌐 Global" if es_global else s.get("maquina_codigo", "")
+        inicio = s.get("fecha_inicio", "")
+        fin = s.get("fecha_fin", "")
+        estado = s.get("estado", "")
+        try:
+            from datetime import datetime
+            fi = datetime.strptime(str(inicio)[:10], "%Y-%m-%d").strftime("%d/%m")
+            ff = datetime.strptime(str(fin)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            label = f"{maquina} — {fi} al {ff} ({estado})"
+        except Exception:
+            label = f"Semana ID {s.get('id')}"
+        opciones[label] = s.get("id")
+    return opciones if opciones else {"Sin semanas": None}
 
 def to_excel(df):
     output = io.BytesIO()
@@ -35,20 +45,22 @@ def to_excel(df):
 # ── Sidebar ──────────────────────────────────────────────
 with st.sidebar:
     st.title("🏭 SIPP - VYGPACK")
-    semana_sel = st.selectbox("Semana para Reportes", opciones_semanas())
+    opciones = opciones_semanas()
+    etiqueta_sel = st.selectbox("Semana para Reportes", list(opciones.keys()))
+    semana_sel = opciones.get(etiqueta_sel)  # Ahora es un integer ID
     st.divider()
     st.page_link("app.py", label="🏠 Dashboard Principal")
     st.page_link("pages/ordenes.py", label="📋 Órdenes")
     st.page_link("pages/semanas.py", label="📅 Semanas")
 
 st.title("📊 Reportes y Control Semanal")
-st.write(f"Visualizando datos para la semana: **{semana_sel}**")
+st.write(f"Visualizando datos para la semana: **{etiqueta_sel}**")
 
 # Cargar la data del plan semanal
-plan_data = get_plan_semanal(semana_sel) or []
+plan_data = get_plan_semanal(semana_id=semana_sel) or []
 
 # Cargar los KPI semanales para Carga y Capacidad
-kpi_data = get_kpi_semanal(semana_sel) or []
+kpi_data = get_kpi_semanal(semana_id=semana_sel) or []
 
 # Cargar semanas del backend para obtener las horas disponibles netas
 semanas_todas = get_semanas() or []
@@ -138,12 +150,16 @@ with tab_carga:
     
     maquinas_objetivo = ["M8", "M10", "M14"]
     
-    # Intentar parsear las fechas de inicio de la semana
-    try:
-        year, week_num = map(int, semana_sel.split("-W"))
-        semana_start = datetime.date.fromisocalendar(year, week_num, 1)
-    except ValueError:
-        semana_start = None
+    # Intentar obtener la fecha de inicio de la semana seleccionada
+    semana_start = None
+    if semana_sel:
+        sem_reg = next((s for s in semanas_todas if s["id"] == semana_sel), None)
+        if sem_reg and sem_reg.get("fecha_inicio"):
+            try:
+                from datetime import datetime
+                semana_start = datetime.strptime(str(sem_reg["fecha_inicio"])[:10], "%Y-%m-%d").date()
+            except Exception:
+                pass
         
     for maq_code in maquinas_objetivo:
         # Encontrar datos en el KPI semanal
