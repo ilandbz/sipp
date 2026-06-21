@@ -81,7 +81,7 @@ def color_clasif(val):
     }
     return colores.get(val, "")
 
-styled = df_clasif.style.applymap(color_clasif, subset=["Clasificación"])
+styled = df_clasif.style.map(color_clasif, subset=["Clasificación"])
 st.dataframe(styled, use_container_width=True, hide_index=True)
 
 st.divider()
