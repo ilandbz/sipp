@@ -498,7 +498,7 @@ async def obtener_cola_completa(id: int, db: AsyncSession = Depends(get_session)
     try:
         from sqlalchemy import text
         query = """
-            SELECT sp.id AS secuencia_id, sp.posicion, of.codigo_of, of.medida_texto,
+            SELECT sp.id AS secuencia_id, sp.posicion, of.codigo_of, of.descripcion AS descripcion_of, of.medida_texto,
                    mat.tipo as material, of.colores_detalle,
                    sp.costo_setup_min, sp.motivo_setup,
                    of.fecha_entrega, sp.estado,

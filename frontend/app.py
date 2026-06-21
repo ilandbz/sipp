@@ -136,8 +136,8 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         return
 
     # Encabezado de columnas
-    cols_header = st.columns([0.4, 1.2, 1, 0.8, 0.5, 1.1, 1.5, 0.8, 0.8, 1.1])
-    headers = ["#", "OF", "Medida", "Cant.", "U.M.",
+    cols_header = st.columns([0.4, 1.0, 1.4, 0.9, 0.7, 0.5, 1.0, 1.3, 0.7, 0.7, 1.0])
+    headers = ["#", "OF", "Descripción", "Medida", "Cant.", "U.M.",
                "Material", "Colores", "Setup", "Entrega", "Acción"]
     for col, h in zip(cols_header, headers):
         col.markdown(f"**{h}**")
@@ -180,18 +180,29 @@ def render_cola_maquina(cola, semana_en_ejecucion, puede_operar):
         if entrega != "—" and str(entrega) not in ["nan", "None", ""]:
             entrega = str(entrega)[:10]
 
-        cols = st.columns([0.4, 1.2, 1, 0.8, 0.5, 1.1, 1.5, 0.8, 0.8, 1.1])
+        cols = st.columns([0.4, 1.0, 1.4, 0.9, 0.7, 0.5, 1.0, 1.3, 0.7, 0.7, 1.0])
         cols[0].write(f"{icono} {of.get('posicion', '')}")
         cols[1].write(of.get("codigo_of", "—"))
-        cols[2].write(of.get("medida_texto", "—"))
-        cols[3].write(str(cantidad))
-        cols[4].write(of.get("unidad_medida", "—"))
-        cols[5].write(of.get("material", "—"))
-        cols[6].write(of.get("colores_detalle", "—"))
-        cols[7].write(setup_display)
-        cols[8].write(str(entrega))
+        
+        descripcion_completa = of.get("descripcion") or of.get("descripcion_of") or ""
+        descripcion_corta = (descripcion_completa[:25] + "...") if len(descripcion_completa) > 25 else descripcion_completa
+        if not descripcion_corta:
+            descripcion_corta = "—"
+        cols[2].markdown(
+            f'<span title="{descripcion_completa}" style="cursor:help; color:#ccc">'
+            f'{descripcion_corta}</span>',
+            unsafe_allow_html=True
+        )
+        
+        cols[3].write(of.get("medida_texto", "—"))
+        cols[4].write(str(cantidad))
+        cols[5].write(of.get("unidad_medida", "—"))
+        cols[6].write(of.get("material", "—"))
+        cols[7].write(of.get("colores_detalle", "—"))
+        cols[8].write(setup_display)
+        cols[9].write(str(entrega))
 
-        with cols[9]:
+        with cols[10]:
             if not semana_en_ejecucion or not puede_operar or not seq_id:
                 st.markdown("—")
             elif estado_seq == "COMPLETADA":
@@ -423,9 +434,8 @@ with st.expander("🔍 Ver desglose de Setup Total", expanded=False):
         st.error(f"Excepción en desglose setup: {e}")
 
 # ── Cuerpo: Cola de máquinas | Matriz ICC ─────────────────
-col_cola, col_icc = st.columns([3, 2])
 
-with col_cola:
+with st.container():
     st.subheader("Cola de producción")
     if not maquinas:
         st.info("No hay máquinas registradas.")
@@ -494,9 +504,9 @@ with col_cola:
                             semana_en_ejecucion = kpi_data.get("estado") == "EN_EJECUCION" if kpi_data else False
                             render_cola_maquina(cola, semana_en_ejecucion, puede_operar)
 
-with col_icc:
-    st.subheader("Matriz de compatibilidad (ICC)")
-    
+st.divider()
+
+with st.expander("🔢 Matriz de compatibilidad (ICC)", expanded=False):
     st.caption("""
         **ICC 100** = misma OF (sin cambio) · 
         **ICC 91** = solo cambio de color (45 min) · 
@@ -505,10 +515,10 @@ with col_icc:
     
     if semana_sel:
         render_matriz_icc(semana_id=semana_sel)
-    
-    st.divider()
-    if can("optimizar"):
-        if st.button("▶ Ejecutar Optimizador", type="primary", use_container_width=True):
+        
+st.divider()
+if can("optimizar"):
+    if st.button("▶ Ejecutar Optimizador", type="primary", use_container_width=True):
             semana_id = st.session_state.get("semana_id_activa", semana_sel)
             if not semana_id:
                 st.error("Selecciona una semana primero")
