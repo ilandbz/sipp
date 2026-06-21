@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from datetime import datetime
-from app.services.icc import calcular_costo_cambio_async, calcular_icc
+from app.services.icc import calcular_costo_cambio_async, calcular_icc, calcular_costo_cambio_sync
 
 async def cargar_penalizaciones(db) -> dict:
     result = await db.execute(text(
@@ -9,50 +9,7 @@ async def cargar_penalizaciones(db) -> dict:
     return {r["tipo_cambio"]: float(r["minutos"]) for r in result.mappings().all()}
 
 def _calcular_setup_sincrono(of_a: dict, of_b: dict, penalizaciones: dict) -> float:
-    total = 0.0
-    hay_setup = False
-    
-    ancho_a = float(of_a.get("ancho_mm") or 0)
-    ancho_b = float(of_b.get("ancho_mm") or 0)
-    alto_a  = float(of_a.get("alto_mm") or 0)
-    alto_b  = float(of_b.get("alto_mm") or 0)
-    fuelle_a = float(of_a.get("fuelle_mm") or 0)
-    fuelle_b = float(of_b.get("fuelle_mm") or 0)
-
-    # T_formato
-    if ancho_a != ancho_b or fuelle_a != fuelle_b:
-        total += 480.0
-        hay_setup = True
-    elif alto_a != alto_b:
-        total += float(penalizaciones.get("CAMBIO_SOLO_ALTURA", 60))
-        hay_setup = True
-
-    # T_color
-    col_a = str(of_a.get("colores_detalle") or "").split(",")[0].strip().upper()
-    col_b = str(of_b.get("colores_detalle") or "").split(",")[0].strip().upper()
-    if col_a and col_b and col_a != col_b:
-        total += float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 30))
-        hay_setup = True
-
-    # T_clise
-    cil_a = of_a.get("cilindro_id")
-    cil_b = of_b.get("cilindro_id")
-    if cil_a and cil_b and cil_a != cil_b:
-        num_colores_b = int(of_b.get("num_colores") or 1)
-        total += float(penalizaciones.get("CAMBIO_CLISE_POR_COLOR", 120)) * num_colores_b
-        hay_setup = True
-
-    # T_material
-    mat_a = of_a.get("material_id")
-    mat_b = of_b.get("material_id")
-    if mat_a and mat_b and mat_a != mat_b:
-        total += float(penalizaciones.get("CAMBIO_MATERIAL", 18))
-        hay_setup = True
-
-    # T_pruebas
-    if hay_setup:
-        total += float(penalizaciones.get("PRUEBAS_REAJUSTES", 120))
-        
+    total, _ = calcular_costo_cambio_sync(of_a, of_b, penalizaciones)
     return total
 
 async def _ordenar_greedy(db, ofs: list, penalizaciones: dict) -> list:
@@ -111,6 +68,8 @@ async def optimizar_semana(db, semana_id: int) -> dict:
             of.cilindro_id,
             of.clise_id,
             of.colores_detalle,
+            of.num_colores,
+            of.tipo_bolsa_id,
             of.fecha_entrega,
             of.horas_produccion,
             of.maquina_asignada_id,
@@ -261,7 +220,8 @@ async def optimizar_semana(db, semana_id: int) -> dict:
     # Recargar las OFs que quedaron en la semana
     result_check = await db.execute(text("""
         SELECT DISTINCT of.id, of.codigo_of, of.ancho_mm,
-               of.alto_mm, of.colores_detalle, of.material_id,
+               of.alto_mm, of.fuelle_mm, of.colores_detalle, of.num_colores, 
+               of.tipo_bolsa_id, of.material_id,
                of.cilindro_id, of.maquina_asignada_id
         FROM sipp.secuencias_produccion sp
         JOIN sipp.ordenes_fabricacion of ON of.id = sp.orden_fabricacion_id
