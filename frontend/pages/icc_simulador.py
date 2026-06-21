@@ -1,11 +1,91 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import pandas as pd
 from auth import require_login
 from utils.api_client import get_ordenes, get_semana_activa, get_cola_semana
 
 require_login()
 st.set_page_config(page_title="Simulador ICC | SIPP", layout="wide")
 st.title("🔬 Simulador de Compatibilidad (ICC)")
+
+st.markdown("## 📚 Teoría de Setup — VYGPACK")
+
+# Tabla de variables
+st.markdown("### Variables de cambio")
+df_teoria = pd.DataFrame({
+    "Variable de cambio": [
+        "Cambio de material / bobina",
+        "Cambio de medida (solo altura)",
+        "Cambio de medida (ancho o fuelle)",
+        "Cambio de color / lavado",
+        "Cambio de clisé",
+        "Pruebas y reajustes"
+    ],
+    "Tiempo base": [
+        "0.30 h (18 min)",
+        "1 h (60 min)",
+        "6–8 h (360–480 min)",
+        "0.50 h (30 min)",
+        "2 h × N° colores",
+        "2 h fijos (si hay setup)"
+    ],
+    "¿Cuándo aplica?": [
+        "Cambia tipo de papel, bobina o ancho de bobina",
+        "Solo cambia el alto de la bolsa",
+        "Cambia ancho o fuelle — cambio completo de formato",
+        "Cambia color de tinta, diseño, logo o número de colores",
+        "Cambia diseño o número de colores del clisé",
+        "Aplica cuando existe cualquier setup"
+    ]
+})
+st.dataframe(df_teoria, use_container_width=True, hide_index=True)
+
+# Fórmula
+st.markdown("### Fórmula del Índice de Complejidad")
+st.info(
+    "**IC = T_material + T_formato + T_color + T_clisé + T_pruebas**\n\n"
+    "- Si no cambia material → T_material = 0\n"
+    "- Si cambia material/bobina → T_material = 18 min\n"
+    "- Si cambia solo altura → T_formato = 60 min\n"
+    "- Si cambia ancho o fuelle → T_formato = 480 min\n"
+    "- Si cambia color → T_color = 30 min\n"
+    "- Si cambia clisé → T_clisé = 120 × N° colores\n"
+    "- Si hay setup → T_pruebas = 120 min (siempre)"
+)
+
+# Tabla de clasificación
+st.markdown("### Clasificación del Índice")
+df_clasif = pd.DataFrame({
+    "Índice de complejidad": [
+        "0 – 90 min",
+        "> 90 – 300 min",
+        "> 300 – 480 min",
+        "> 480 min"
+    ],
+    "Clasificación": ["Bajo", "Medio", "Alto", "Crítico"],
+    "ICC resultante": ["100 – 81", "80 – 38", "37 – 1", "0"],
+    "Interpretación": [
+        "Cambio menor: solo altura o bobina",
+        "Cambio de impresión simple o color",
+        "Cambio de medida / formato",
+        "Cambio de formato + impresión / clisé / color"
+    ]
+})
+
+def color_clasif(val):
+    colores = {
+        "Bajo": "background-color: #1b5e20; color: white",
+        "Medio": "background-color: #f9a825; color: black",
+        "Alto": "background-color: #e65100; color: white",
+        "Crítico": "background-color: #b71c1c; color: white"
+    }
+    return colores.get(val, "")
+
+styled = df_clasif.style.applymap(color_clasif, subset=["Clasificación"])
+st.dataframe(styled, use_container_width=True, hide_index=True)
+
+st.divider()
+st.markdown("## 🔬 Simulador interactivo")
 st.caption("""
     Selecciona dos órdenes para ver cuánto tiempo de setup habría entre ellas
     y qué tan compatibles son según las reglas SMED de VYGPACK.

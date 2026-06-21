@@ -35,140 +35,163 @@ async def calcular_costo_cambio_async(db, of_a: dict, of_b: dict, penalizaciones
     from sqlalchemy import text
     total = 0.0
     detalle = []
-    
-    # Obtener números de bolsa
+    hay_setup = False
+
+    ancho_a = float(_get(of_a, "ancho_mm") or 0)
+    ancho_b = float(_get(of_b, "ancho_mm") or 0)
+    alto_a  = float(_get(of_a, "alto_mm") or 0)
+    alto_b  = float(_get(of_b, "alto_mm") or 0)
+    fuelle_a = float(_get(of_a, "fuelle_mm") or 0)
+    fuelle_b = float(_get(of_b, "fuelle_mm") or 0)
     num_a = _get(of_a, "tipo_bolsa_num") or _get(of_a, "tipo_bolsa_id")
     num_b = _get(of_b, "tipo_bolsa_num") or _get(of_b, "tipo_bolsa_id")
     maq_a = _get(of_a, "maquina_asignada_id")
-    maq_b = _get(of_b, "maquina_asignada_id")
-    ancho_a = float(_get(of_a, "ancho_mm") or 0)
-    ancho_b = float(_get(of_b, "ancho_mm") or 0)
-    
-    # Verificar cambio de medida
-    mismo_formato = (ancho_a == ancho_b and ancho_a > 0)
-    
-    if not mismo_formato:
-        # Consultar excepciones de M8
-        costo_medida = 480.0  # default
-        
+
+    # T_formato
+    if ancho_a != ancho_b or fuelle_a != fuelle_b:
+        # Cambio de ancho o fuelle = cambio completo
+        costo_medida = 480.0
+        # Verificar excepción M8
         if num_a and num_b and num_a != num_b:
             result = await db.execute(text("""
                 SELECT m.codigo, sc.minutos
                 FROM sipp.maquinas m
                 LEFT JOIN sipp.setup_cambio_medida_m8 sc
-                    ON sc.bolsa_origen = :num_a 
+                    ON sc.bolsa_origen = :num_a
                     AND sc.bolsa_destino = :num_b
                 WHERE m.id = :maq_id
             """), {"num_a": num_a, "num_b": num_b, "maq_id": maq_a})
             row = result.mappings().one_or_none()
-            
             if row and row["codigo"] == "M8" and row["minutos"] is not None:
                 costo_medida = float(row["minutos"])
-            else:
-                costo_medida = 480.0  # M10/M14: siempre 8h
-        
         total += costo_medida
         detalle.append(f"Cambio medida +{costo_medida:.0f}min")
-    
-    # Color
+        hay_setup = True
+    elif alto_a != alto_b:
+        # Solo cambia alto = cambio parcial
+        costo = float(penalizaciones.get("CAMBIO_SOLO_ALTURA", 60))
+        total += costo
+        detalle.append(f"Cambio altura +{costo:.0f}min")
+        hay_setup = True
+
+    # T_color
     col_a = (str(_get(of_a, "colores_detalle") or "")).split(",")[0].strip().upper()
     col_b = (str(_get(of_b, "colores_detalle") or "")).split(",")[0].strip().upper()
     if col_a and col_b and col_a != col_b:
-        costo = float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 45))
+        costo = float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 30))
         total += costo
         detalle.append(f"Cambio color +{costo:.0f}min")
-    
-    # Cilindro
+        hay_setup = True
+
+    # T_clise (2h × N° colores destino)
     cil_a = _get(of_a, "cilindro_id")
     cil_b = _get(of_b, "cilindro_id")
     if cil_a and cil_b and cil_a != cil_b:
-        costo = float(penalizaciones.get("CAMBIO_CILINDRO_IMPRESION", 30))
-        total += costo
-        detalle.append(f"Cambio cilindro +{costo:.0f}min")
-    
-    # Material
+        num_colores_b = int(_get(of_b, "num_colores") or 1)
+        costo_por_color = float(penalizaciones.get("CAMBIO_CLISE_POR_COLOR", 120))
+        costo_clise = costo_por_color * num_colores_b
+        total += costo_clise
+        detalle.append(f"Cambio clisé +{costo_clise:.0f}min ({num_colores_b} colores × {costo_por_color:.0f}min)")
+        hay_setup = True
+
+    # T_material
     mat_a = _get(of_a, "material_id")
     mat_b = _get(of_b, "material_id")
     if mat_a and mat_b and mat_a != mat_b:
-        costo = float(penalizaciones.get("CAMBIO_MATERIAL", 25))
+        costo = float(penalizaciones.get("CAMBIO_MATERIAL", 18))
         total += costo
         detalle.append(f"Cambio material +{costo:.0f}min")
-    
+        hay_setup = True
+
+    # T_pruebas (fijo si hay cualquier setup)
+    if hay_setup:
+        costo_pruebas = float(penalizaciones.get("PRUEBAS_REAJUSTES", 120))
+        total += costo_pruebas
+        detalle.append(f"Pruebas y reajustes +{costo_pruebas:.0f}min")
+
     return total, {"detalle": detalle, "total_min": total}
 
 def calcular_costo_cambio_sync(of_a, of_b, penalizaciones: dict) -> tuple[float, dict]:
-    total_min = 0.0
-    cambio_formato = False
-    cambio_parcial = False
-    cambio_cilindro = False
-    cambio_clise = False
-    cambio_color = False
-    cambio_material = False
+    total = 0.0
     detalle = []
+    hay_setup = False
 
-    # 1. CAMBIO DE FORMATO (COMPLETO O PARCIAL)
-    if _get(of_a, "ancho_mm") != _get(of_b, "ancho_mm") or _get(of_a, "alto_mm") != _get(of_b, "alto_mm") or _get(of_a, "fuelle_mm") != _get(of_b, "fuelle_mm"):
-        if es_cambio_contiguo(of_a, of_b):
-            costo = 105.0 # Jugada corta / cambio parcial
-            total_min += costo
-            cambio_parcial = True
-            detalle.append(f"Cambio formato parcial +{costo:.1f}min")
-        else:
-            costo = float(penalizaciones.get("CAMBIO_FORMATO_MEDIDA_COMPLETA", 480.0))
-            total_min += costo
-            cambio_formato = True
-            detalle.append(f"Cambio formato +{costo:.1f}min")
+    ancho_a = float(_get(of_a, "ancho_mm") or 0)
+    ancho_b = float(_get(of_b, "ancho_mm") or 0)
+    alto_a  = float(_get(of_a, "alto_mm") or 0)
+    alto_b  = float(_get(of_b, "alto_mm") or 0)
+    fuelle_a = float(_get(of_a, "fuelle_mm") or 0)
+    fuelle_b = float(_get(of_b, "fuelle_mm") or 0)
 
-    # 2. CAMBIO_CILINDRO_IMPRESION
+    # T_formato
+    if ancho_a != ancho_b or fuelle_a != fuelle_b:
+        costo_medida = 480.0
+        total += costo_medida
+        detalle.append(f"Cambio medida +{costo_medida:.0f}min")
+        hay_setup = True
+    elif alto_a != alto_b:
+        costo = float(penalizaciones.get("CAMBIO_SOLO_ALTURA", 60))
+        total += costo
+        detalle.append(f"Cambio altura +{costo:.0f}min")
+        hay_setup = True
+
+    # T_color
+    col_a = (str(_get(of_a, "colores_detalle") or "")).split(",")[0].strip().upper()
+    col_b = (str(_get(of_b, "colores_detalle") or "")).split(",")[0].strip().upper()
+    if col_a and col_b and col_a != col_b:
+        costo = float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 30))
+        total += costo
+        detalle.append(f"Cambio color +{costo:.0f}min")
+        hay_setup = True
+
+    # T_clise
     cil_a = _get(of_a, "cilindro_id")
     cil_b = _get(of_b, "cilindro_id")
-    if cil_a != cil_b and cil_b is not None:
-        costo = float(penalizaciones.get("CAMBIO_CILINDRO_IMPRESION", 30.0))
-        total_min += costo
-        cambio_cilindro = True
-        detalle.append(f"Cambio cilindro +{costo:.1f}min")
+    if cil_a and cil_b and cil_a != cil_b:
+        num_colores_b = int(_get(of_b, "num_colores") or 1)
+        costo_por_color = float(penalizaciones.get("CAMBIO_CLISE_POR_COLOR", 120))
+        costo_clise = costo_por_color * num_colores_b
+        total += costo_clise
+        detalle.append(f"Cambio clisé +{costo_clise:.0f}min ({num_colores_b} colores × {costo_por_color:.0f}min)")
+        hay_setup = True
 
-    # 3. CAMBIO_CLISE
-    clise_a = _get(of_a, "clise_id")
-    clise_b = _get(of_b, "clise_id")
-    if clise_a != clise_b and clise_b is not None:
-        costo = float(penalizaciones.get("CAMBIO_CLISE", 17.5))
-        total_min += costo
-        cambio_clise = True
-        detalle.append(f"Cambio clisé +{costo:.1f}min")
-
-    # 4. CAMBIO_COLOR_LAVADO_ESTACION
-    color_a = extraer_color_primario(_get(of_a, "colores_detalle"))
-    color_b = extraer_color_primario(_get(of_b, "colores_detalle"))
-    if color_a != color_b and color_a != "" and color_b != "":
-        costo = float(penalizaciones.get("CAMBIO_COLOR_LAVADO_ESTACION", 45.0))
-        total_min += costo
-        cambio_color = True
-        detalle.append(f"Cambio color +{costo:.1f}min")
-
-    # 5. CAMBIO_MATERIAL
+    # T_material
     mat_a = _get(of_a, "material_id")
     mat_b = _get(of_b, "material_id")
-    if mat_a != mat_b:
-        costo = float(penalizaciones.get("CAMBIO_MATERIAL", 25.0))
-        total_min += costo
-        cambio_material = True
-        detalle.append(f"Cambio material +{costo:.1f}min")
+    if mat_a and mat_b and mat_a != mat_b:
+        costo = float(penalizaciones.get("CAMBIO_MATERIAL", 18))
+        total += costo
+        detalle.append(f"Cambio material +{costo:.0f}min")
+        hay_setup = True
 
-    res_dict = {
-        "cambio_formato": cambio_formato,
-        "cambio_parcial": cambio_parcial,
-        "cambio_cilindro": cambio_cilindro,
-        "cambio_clise": cambio_clise,
-        "cambio_color": cambio_color,
-        "cambio_material": cambio_material,
-        "detalle": detalle,
-        "total_min": total_min
-    }
-    return total_min, res_dict
+    # T_pruebas
+    if hay_setup:
+        costo_pruebas = float(penalizaciones.get("PRUEBAS_REAJUSTES", 120))
+        total += costo_pruebas
+        detalle.append(f"Pruebas y reajustes +{costo_pruebas:.0f}min")
+
+    return total, {"detalle": detalle, "total_min": total}
 
 # Aliases para compatibilidad
 calcular_costo_cambio = calcular_costo_cambio_sync
 
 def calcular_icc(setup_total_min: float) -> float:
-    return max(0.0, min(100.0, 100.0 - (setup_total_min / 480.0 * 100.0)))
+    """
+    ICC basado en clasificación de complejidad VYGPACK:
+    0-90 min   → ICC 100-81 (Bajo)
+    91-300 min → ICC 80-38  (Medio)
+    301-480 min → ICC 37-1  (Alto)
+    >480 min   → ICC 0      (Crítico)
+    """
+    if setup_total_min <= 0:
+        return 100.0
+    if setup_total_min <= 90:
+        # Escala de 100 a 81
+        return round(100.0 - (setup_total_min / 90.0 * 19.0), 1)
+    if setup_total_min <= 300:
+        # Escala de 80 a 38
+        return round(80.0 - ((setup_total_min - 90) / 210.0 * 42.0), 1)
+    if setup_total_min <= 480:
+        # Escala de 37 a 1
+        return round(37.0 - ((setup_total_min - 300) / 180.0 * 36.0), 1)
+    return 0.0
