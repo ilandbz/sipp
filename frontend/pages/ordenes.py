@@ -351,6 +351,7 @@ def _formulario_of(of_existente: dict = None):
         gramaje_auto = materiales_gramaje.get(mat_sel_id, 0.0)
         bolsa_sel = col_m3.selectbox("N° de Bolsa *", ["(ninguno)"] + list(bolsa_opciones.keys()), index=idx_bolsa, key=f"{prefix}bolsa_sel")
         cil_sel = col_m4.selectbox("Cilindro", ["(ninguno)"] + list(cil_opciones.keys()), index=idx_cil, key=f"{prefix}cil_sel")
+        col_m4.caption("🔧 Cambiar de cilindro entre OFs = +30 min de setup")
         
         st.write("**Medida (mm) ***")
         col_dim1, col_dim2, col_dim3 = st.columns(3)
@@ -366,6 +367,7 @@ def _formulario_of(of_existente: dict = None):
         
         col_c1, col_c2, col_c3 = st.columns(3)
         num_colores = col_c1.number_input("Número de colores", min_value=0, max_value=6, step=1, value=int(of_existente.get("num_colores") or 0) if es_ed else 0, key=f"{prefix}num_colores")
+        col_c1.caption("🎨 Cambiar colores entre OFs = +45 min de setup")
         colores_det = col_c2.text_input("Colores / Impresión *", value=of_existente.get("colores_detalle", "") if es_ed else "", key=f"{prefix}colores_det")
         fecha_entrega = col_c3.date_input("Fecha de entrega *", value=val_entrega, key=f"{prefix}fecha_entrega")
         
@@ -381,14 +383,52 @@ def _formulario_of(of_existente: dict = None):
         )
 
         with st.expander("➕ Datos adicionales"):
+            st.info(
+                "💡 **Datos técnicos opcionales** — Completa estos campos para "
+                "mejorar la precisión del cálculo de setup y el peso de producción. "
+                "El **Cilindro** y **Número de colores** (en la vista principal) "
+                "son los más importantes para el optimizador."
+            )
             col_o1, col_o2 = st.columns(2)
-            codigo_pt = col_o1.text_input("Código PT", value=of_existente.get("codigo_pt", "") if es_ed else "", key=f"{prefix}codigo_pt")
+            codigo_pt = col_o1.text_input(
+                "Código PT", 
+                value=of_existente.get("codigo_pt", "") if es_ed else "", 
+                help="Código interno del Producto Terminado. Usado para trazabilidad y despacho en almacén.",
+                key=f"{prefix}codigo_pt"
+            )
             gramaje_prev = float(of_existente.get("gramaje") or 0.0) if es_ed else 0.0
+            gramaje_auto = float(materiales_gramaje.get(mat_sel_id, 0.0)) if mat_sel_id else 0.0
             gramaje_val = gramaje_auto if gramaje_auto > 0 else gramaje_prev
-            gramaje = col_o2.number_input("Gramaje", min_value=0.0, step=1.0, value=float(gramaje_val), key=f"{prefix}gramaje_{mat_sel_id}")
+            gramaje_final = gramaje_val if gramaje_val > 0 else 0.0
+            
+            gramaje = col_o2.number_input(
+                "Gramaje (g/m²)",
+                value=gramaje_final,
+                min_value=0.0,
+                step=0.5,
+                key=f"gramaje_input_{mat_sel_id}",
+                help="Peso del papel en gramos por metro cuadrado. Se completa automáticamente según el material seleccionado."
+            )
+            
+            if gramaje_auto > 0:
+                col_o2.caption(f"✅ Autocompletado desde {mat_sel}: {gramaje_auto} g/m²")
+            else:
+                col_o2.caption("⚠ Este material no tiene gramaje definido. Ingresa el valor manualmente.")
             
             col_o3, col_o4 = st.columns(2)
-            peso_mil = col_o3.number_input("Peso por millar", min_value=0.0, step=0.1, value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, key=f"{prefix}peso_mil")
+            peso_mil = col_o3.number_input(
+                "Peso por millar (kg)", 
+                min_value=0.0, 
+                step=0.1, 
+                value=float(of_existente.get("peso_por_millar") or 0.0) if es_ed else 0.0, 
+                help="Peso en kilogramos de 1,000 bolsas terminadas. Referencia: Área bolsa × Gramaje / 1,000,000 × 2 caras",
+                key=f"{prefix}peso_mil"
+            )
+            if gramaje_final > 0 and ancho > 0 and alto > 0:
+                area_m2 = ((ancho + fuelle) * 2 * alto) / 1_000_000
+                peso_estimado = round(area_m2 * gramaje_final * 1000, 2)
+                col_o3.caption(f"📐 Estimado automático: {peso_estimado} kg/millar "
+                           f"(Área {round(area_m2*10000,2)} cm² × {gramaje_final} g/m²)")
             
             OPCIONES_LEVA = [
                 "",
@@ -414,10 +454,18 @@ def _formulario_of(of_existente: dict = None):
                 options=OPCIONES_LEVA, 
                 index=idx_leva,
                 format_func=lambda x: "— Seleccionar leva —" if x == "" else x,
+                help="Pieza mecánica que controla el movimiento del fuelle. Cada tamaño de bolsa requiere una leva específica. Cambiar de leva implica tiempo adicional de setup.",
                 key=f"{prefix}leva_req"
             )
             
-            dist_base = st.number_input("Distancia de base (mm)", min_value=0.0, step=0.1, value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0, key=f"{prefix}dist_base")
+            dist_base = st.number_input(
+                "Distancia de base (mm)", 
+                min_value=0.0, 
+                step=0.1, 
+                value=float(of_existente.get("distancia_base_mm") or 0.0) if es_ed else 0.0, 
+                help="Paso del cilindro en milímetros. Distancia que avanza el papel por cada vuelta del cilindro de impresión.",
+                key=f"{prefix}dist_base"
+            )
             
             observacion = st.text_area("Observación", value=of_existente.get("observacion", "") if es_ed else "", key=f"{prefix}observacion")
 
