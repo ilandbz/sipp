@@ -378,36 +378,47 @@ with col4:
         <div class="kpi-label">🏭 Máquinas M8·M10·M14</div>
     </div>""", unsafe_allow_html=True)
 
-# ── Panel de Análisis IA ──────────────────────────────────
-with st.expander("🤖 Análisis IA de la semana", expanded=False):
-    st.caption("Genera un resumen ejecutivo basado en los datos actuales de la semana.")
-    if st.button("✨ Generar análisis", key="btn_analisis_ia", type="primary"):
+# ── Panel de Análisis Automático ────────────────────────────
+with st.expander("🤖 Análisis de la semana", expanded=False):
+    st.caption(
+        "Resumen ejecutivo automático basado en los datos reales "
+        "de la semana seleccionada."
+    )
+    col_btn, col_info = st.columns([1, 3])
+    with col_btn:
+        generar = st.button(
+            "📊 Generar análisis",
+            key="btn_analisis",
+            type="primary",
+            use_container_width=True
+        )
+    with col_info:
+        st.caption(
+            "⚡ Análisis instantáneo · Sin conexión externa · "
+            "Actualizado con datos en tiempo real"
+        )
+
+    if generar:
         if not semana_sel or not kpi_data:
             st.warning("Selecciona una semana con datos primero.")
         else:
-            with st.spinner("Analizando datos de la semana..."):
+            with st.spinner("Analizando datos..."):
                 try:
-                    # Obtener cola completa para el análisis
-                    from utils.api_client import get_cola_semana, generar_analisis_ia
+                    from utils.api_client import get_cola_semana
+                    from utils.analisis import generar_analisis_semanal
                     cola_completa = get_cola_semana(semana_sel) or []
-
-                    # Preparar payload
-                    payload = {
-                        "semana_id": semana_sel,
-                        "kpi": kpi_data,
-                        "cola_resumen": cola_completa[:20],  # max 20 OFs
-                        "setup_detalle": []
-                    }
-                    analisis = generar_analisis_ia(payload)
-                    st.session_state["ultimo_analisis_ia"] = analisis
+                    analisis = generar_analisis_semanal(
+                        kpi=kpi_data,
+                        cola=cola_completa,
+                        setup_detalle={}
+                    )
+                    st.session_state["ultimo_analisis"] = analisis
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error al generar análisis: {e}")
 
-    # Mostrar último análisis generado
-    if "ultimo_analisis_ia" in st.session_state:
+    if "ultimo_analisis" in st.session_state:
         st.markdown("---")
-        st.markdown(st.session_state["ultimo_analisis_ia"])
-        st.caption("💡 Generado por Claude IA · Basado en datos en tiempo real")
+        st.markdown(st.session_state["ultimo_analisis"])
 
 st.divider()
 
