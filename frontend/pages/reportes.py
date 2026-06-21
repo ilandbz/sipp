@@ -66,11 +66,12 @@ kpi_data = get_kpi_semanal(semana_id=semana_sel) or []
 semanas_todas = get_semanas() or []
 
 # Crear las pestañas
-tab_prog, tab_setup, tab_carga, tab_historial = st.tabs([
-    "📅 Programa Semanal",
+tab_prog, tab_setup, tab_carga, tab_historial, tab_ejecutiva = st.tabs([
+    "📋 Programa Semanal",
     "⏱ Tiempos de Setup",
     "⚡ Carga y Capacidad",
-    "📜 Histórico de Cambios"
+    "📜 Histórico de Cambios",
+    "🎯 Vista Ejecutiva"
 ])
 
 # ─────────────────────────────────────────────────────────
@@ -226,3 +227,176 @@ with tab_historial:
         ]
         
         st.dataframe(df_logs_show, width='stretch', hide_index=True)
+
+# ─────────────────────────────────────────────────────────
+# TAB 5: Vista Ejecutiva
+# ─────────────────────────────────────────────────────────
+with tab_ejecutiva:
+    st.markdown("### 🎯 Vista Ejecutiva — Plan de Producción")
+    st.caption("Tabla resumen para presentaciones y reuniones de producción.")
+
+    if not plan_data:
+        st.info("No hay datos para esta semana. Ejecute el optimizador primero.")
+    else:
+        import pandas as pd
+        from datetime import date
+
+        hoy = date.today()
+
+        # Construir DataFrame enriquecido
+        filas = []
+        for i, of in enumerate(plan_data, 1):
+            setup_min = float(of.get("setup_min") or 0)
+            fecha_ent = of.get("fecha_entrega")
+            estado_seq = of.get("estado_secuencia", "PENDIENTE")
+
+            # Prioridad basada en fecha
+            prioridad = "Baja"
+            alerta_fecha = ""
+            if fecha_ent:
+                try:
+                    fe = date.fromisoformat(str(fecha_ent)[:10])
+                    dias = (fe - hoy).days
+                    if dias < 0:
+                        prioridad = "Alta"
+                        alerta_fecha = f"⚠ Vencida ({abs(dias)}d)"
+                    elif dias <= 3:
+                        prioridad = "Alta"
+                        alerta_fecha = f"⚠ Urgente ({dias}d)"
+                    elif dias <= 7:
+                        prioridad = "Media"
+                        alerta_fecha = f"({dias}d)"
+                    else:
+                        alerta_fecha = str(fe.strftime("%d/%m"))
+                except Exception:
+                    alerta_fecha = str(fecha_ent)[:10] if fecha_ent else "—"
+            else:
+                alerta_fecha = "—"
+
+            # Setup display
+            if setup_min == 0:
+                setup_display = "0 min"
+                setup_clase = "sin cambio"
+            elif setup_min < 480:
+                setup_display = f"{int(setup_min)} min ({setup_min/60:.1f}h)"
+                setup_clase = "medio"
+            else:
+                setup_display = f"{int(setup_min)} min ({setup_min/60:.1f}h)"
+                setup_clase = "crítico"
+
+            # Estado display
+            estado_display = {
+                "PENDIENTE": "⏳ Pendiente",
+                "EN_PROCESO": "🔄 En proceso",
+                "COMPLETADA": "✅ Completada",
+                "BLOQUEADA": "🔒 Bloqueada"
+            }.get(estado_seq, estado_seq)
+
+            filas.append({
+                "#": i,
+                "Orden": of.get("codigo_of", "—"),
+                "Descripción": (of.get("descripcion") or "—")[:45] + (
+                    "..." if len(of.get("descripcion") or "") > 45 else ""
+                ),
+                "Máquina": of.get("maquina", "—"),
+                "Medida": of.get("medida_texto", "—"),
+                "Prioridad": prioridad,
+                "Setup estimado": setup_display,
+                "Entrega": alerta_fecha,
+                "Estado": estado_display,
+                "_setup_min": setup_min,
+                "_prioridad_orden": 0 if prioridad == "Alta" else (
+                    1 if prioridad == "Media" else 2
+                )
+            })
+
+        df = pd.DataFrame(filas)
+
+        # KPIs rápidos arriba
+        col1, col2, col3, col4 = st.columns(4)
+        total = len(df)
+        alta = len(df[df["Prioridad"] == "Alta"])
+        en_proceso = len(df[df["Estado"].str.contains("proceso", case=False, na=False)])
+        completadas = len(df[df["Estado"].str.contains("Completada", case=False, na=False)])
+
+        col1.metric("Total OFs", total)
+        col2.metric("Alta prioridad", alta,
+                    delta="urgentes" if alta > 0 else None,
+                    delta_color="inverse")
+        col3.metric("En proceso", en_proceso)
+        col4.metric("Completadas", completadas,
+                    delta=f"{round(completadas/total*100)}%" if total > 0 else None)
+
+        st.divider()
+
+        # Colorear según prioridad y setup
+        def colorear_fila(row):
+            if "Alta" in str(row.get("Prioridad", "")):
+                return ["background-color: #FFEBEE"] * len(row)
+            elif "Media" in str(row.get("Prioridad", "")):
+                return ["background-color: #FFF8E1"] * len(row)
+            return [""] * len(row)
+
+        def colorear_setup(val):
+            try:
+                mins = float(str(val).split(" ")[0])
+                if mins == 0:
+                    return "color: #2E7D32; font-weight: 500"
+                elif mins < 480:
+                    return "color: #E65100; font-weight: 500"
+                else:
+                    return "color: #C62828; font-weight: 500"
+            except Exception:
+                return ""
+
+        # Mostrar tabla sin columnas internas
+        df_display = df.drop(columns=["_setup_min", "_prioridad_orden"])
+
+        styled = (
+            df_display.style
+            .apply(colorear_fila, axis=1)
+            .map(colorear_setup, subset=["Setup estimado"])
+        )
+
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True,
+            height=min(400, 40 + len(df) * 38)
+        )
+
+        # Leyenda
+        st.caption(
+            "🔴 Alta prioridad (entrega vencida o ≤3 días) · "
+            "🟡 Media prioridad (entrega en 4-7 días) · "
+            "⬜ Baja prioridad · "
+            "Setup: verde=0min · naranja=<8h · rojo=≥8h"
+        )
+
+        st.divider()
+
+        # Exportar a Excel
+        st.markdown("#### 📥 Exportar")
+        col_exp1, col_exp2 = st.columns([1, 3])
+        with col_exp1:
+            try:
+                import io
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    df_display.to_excel(
+                        writer,
+                        sheet_name="Plan Producción",
+                        index=False
+                    )
+                output.seek(0)
+                st.download_button(
+                    label="⬇ Descargar Excel",
+                    data=output,
+                    file_name=f"Plan_Produccion_Semana_{semana_sel}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Error al generar Excel: {e}")
+
