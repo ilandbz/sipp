@@ -378,6 +378,37 @@ with col4:
         <div class="kpi-label">🏭 Máquinas M8·M10·M14</div>
     </div>""", unsafe_allow_html=True)
 
+# ── Panel de Análisis IA ──────────────────────────────────
+with st.expander("🤖 Análisis IA de la semana", expanded=False):
+    st.caption("Genera un resumen ejecutivo basado en los datos actuales de la semana.")
+    if st.button("✨ Generar análisis", key="btn_analisis_ia", type="primary"):
+        if not semana_sel or not kpi_data:
+            st.warning("Selecciona una semana con datos primero.")
+        else:
+            with st.spinner("Analizando datos de la semana..."):
+                try:
+                    # Obtener cola completa para el análisis
+                    from utils.api_client import get_cola_semana, generar_analisis_ia
+                    cola_completa = get_cola_semana(semana_sel) or []
+
+                    # Preparar payload
+                    payload = {
+                        "semana_id": semana_sel,
+                        "kpi": kpi_data,
+                        "cola_resumen": cola_completa[:20],  # max 20 OFs
+                        "setup_detalle": []
+                    }
+                    analisis = generar_analisis_ia(payload)
+                    st.session_state["ultimo_analisis_ia"] = analisis
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    # Mostrar último análisis generado
+    if "ultimo_analisis_ia" in st.session_state:
+        st.markdown("---")
+        st.markdown(st.session_state["ultimo_analisis_ia"])
+        st.caption("💡 Generado por Claude IA · Basado en datos en tiempo real")
+
 st.divider()
 
 with st.expander("🔍 Ver desglose de Setup Total", expanded=False):

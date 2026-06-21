@@ -427,3 +427,12 @@ def actualizar_perfil(payload: dict):
         return None
     except Exception:
         return None
+
+def generar_analisis_ia(datos_semana: dict) -> str:
+    """
+    Llama al backend para generar análisis IA de la semana.
+    """
+    r = _post("/api/v1/kpi/analisis-ia", datos_semana)
+    if r and isinstance(r, dict):
+        return r.get("analisis", "No se pudo generar el análisis.")
+    return "Error al conectar con el servicio de análisis."

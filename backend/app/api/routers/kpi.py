@@ -358,3 +358,118 @@ async def get_setup_detalle(semana_id: int, db: AsyncSession = Depends(get_sessi
         "setup_grand_total_horas": round(grand_total_min / 60, 2),
         "por_maquina": resumen
     }
+
+@router.post("/analisis-ia")
+async def analisis_ia_semana(
+    body: dict,
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Genera un análisis ejecutivo de la semana usando Claude API.
+    """
+    import httpx
+    import os
+
+    semana_id    = body.get("semana_id")
+    kpi          = body.get("kpi", {})
+    cola_resumen = body.get("cola_resumen", [])
+    setup_detalle = body.get("setup_detalle", [])
+
+    # Construir prompt con datos reales
+    fecha_ini = kpi.get("fecha_inicio", "")
+    fecha_fin = kpi.get("fecha_fin", "")
+    total_ofs = kpi.get("total_ofs", 0)
+    setup_h   = kpi.get("setup_total_horas", 0)
+    util_pct  = kpi.get("utilizacion_pct", 0)
+    estado    = kpi.get("estado", "")
+    horas_dis = kpi.get("horas_disponibles", 120)
+    horas_pro = kpi.get("horas_produccion", 0)
+
+    # Construir resumen de cola
+    resumen_ofs = ""
+    alertas_entrega = []
+    alertas_matiz = []
+    from datetime import date
+    hoy = date.today()
+    for of in cola_resumen:
+        codigo = of.get("codigo_of", "")
+        maquina = of.get("maquina", "")
+        setup_min = float(of.get("costo_setup_min") or 0)
+        colores = str(of.get("colores_detalle") or "").upper()
+        fecha_ent = of.get("fecha_entrega")
+        motivo = of.get("motivo_setup", "")
+
+        resumen_ofs += f"  - {codigo} ({maquina}): setup {setup_min:.0f}min | {motivo}\n"
+
+        # Alertas entrega vencida
+        if fecha_ent:
+            try:
+                fe = date.fromisoformat(str(fecha_ent)[:10])
+                if fe < hoy:
+                    alertas_entrega.append(f"{codigo} (venció {fe})")
+            except Exception:
+                pass
+
+        # Alertas matizado
+        palabras = ["MATIZ", "PANTONE", "GCMI", "POR CONFIRMAR"]
+        if any(p in colores for p in palabras):
+            alertas_matiz.append(f"{codigo} ({colores[:40]})")
+
+    alertas_txt = ""
+    if alertas_entrega:
+        alertas_txt += f"\nOFs con fecha vencida: {', '.join(alertas_entrega)}"
+    if alertas_matiz:
+        alertas_txt += f"\nOFs con colores de riesgo matizado: {', '.join(alertas_matiz)}"
+
+    prompt = f"""Eres el asistente de planificación de producción de VYGPACK,
+una fábrica de bolsas de papel kraft en Lima, Perú.
+
+Analiza los siguientes datos de la semana de producción y genera un
+resumen ejecutivo conciso en español para el jefe de producción.
+El tono debe ser profesional pero directo. Máximo 200 palabras.
+
+DATOS DE LA SEMANA {fecha_ini} al {fecha_fin}:
+- Estado: {estado}
+- OFs programadas: {total_ofs}
+- Horas disponibles: {horas_dis}h (3 máquinas × 5 días × 8h)
+- Horas de producción: {horas_pro}h
+- Setup total: {setup_h}h
+- Utilización: {util_pct}%
+{alertas_txt}
+
+DETALLE DE OFs POR MÁQUINA:
+{resumen_ofs}
+
+Estructura tu respuesta con:
+1. Una línea de resumen general
+2. Puntos de alerta (si los hay)
+3. Una recomendación concreta
+
+Usa emojis para facilitar la lectura rápida.
+No repitas los números exactos que ya ve el usuario en los KPIs."""
+
+    # Llamar a Claude API
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"analisis": "⚠ API key de Anthropic no configurada en el servidor."}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 500,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            )
+            data = resp.json()
+            texto = data["content"][0]["text"]
+            return {"analisis": texto}
+    except Exception as e:
+        return {"analisis": f"⚠ Error al generar análisis: {str(e)}"}
