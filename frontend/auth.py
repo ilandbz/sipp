@@ -194,6 +194,7 @@ def render_sidebar(opciones_semanas: list = None) -> str | None:
     st.page_link("pages/semanas.py",    label="2️⃣ Semanas de Programación")
     st.page_link("pages/reportes.py",   label="4️⃣ Reportes y Plan Semanal")
     st.page_link("pages/icc_simulador.py", label="🔬 Simulador ICC")
+    st.page_link("pages/documentacion.py", label="📘 Doc. Técnica")
     
     st.divider()
     st.markdown("### ⚙️ Configuración")
